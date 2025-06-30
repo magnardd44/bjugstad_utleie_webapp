@@ -1,11 +1,11 @@
 import React from 'react';
 
-const Home = () => {
+const test = () => {
     return (
         <div className='h-screen flex justify-center items-center'>
-           <h1 className='text-3xl'>BJUGSTAD UTLEIE WEBAPP</h1>
+           <h1 className='text-3xl'>KART</h1>
         </div>
     );
 }
 
-export default Home;
+export default test;
