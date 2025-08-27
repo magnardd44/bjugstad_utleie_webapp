@@ -17,6 +17,7 @@ export default function ProfilPage() {
 
   // If middleware already protects this route, unauthenticated users won't reach here.
   // Still handle gracefully:
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const user = (data?.user as any) || {};
 
   // Try to format createdAt if present
@@ -24,17 +25,17 @@ export default function ProfilPage() {
     typeof user.createdAt === "string"
       ? new Date(user.createdAt)
       : user.createdAt instanceof Date
-      ? user.createdAt
-      : null;
+        ? user.createdAt
+        : null;
 
   const createdLabel = created
     ? created.toLocaleString("no-NO", {
-        year: "numeric",
-        month: "short",
-        day: "2-digit",
-        hour: "2-digit",
-        minute: "2-digit",
-      })
+      year: "numeric",
+      month: "short",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+    })
     : "N/A";
 
   return (
@@ -57,7 +58,7 @@ export default function ProfilPage() {
           >
             Be om innsyn i lagrede data
           </button>
-          
+
           <button
             onClick={() => alert("TODO: Implement functionality")}
             className="rounded-lg bg-red-500 text-white px-4 py-2 hover:bg-red-600 cursor-pointer"

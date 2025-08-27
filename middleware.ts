@@ -6,34 +6,34 @@ export async function middleware(req: Request) {
   const url = new URL(req.url);
   const pathname = url.pathname;
 
-  // 1) Allow static assets (served from /public at the URL root) and Next internals
+  // Allow static assets and Next internals
   if (
     pathname.startsWith("/_next") ||
     pathname === "/favicon.ico" ||
-    /\.(?:png|jpg|jpeg|svg|gif|ico|css|js|map|pdf|txt|woff2?|ttf|eot)$/i.test(pathname)
+    /\.(?:png|jpg|jpeg|svg|gif|ico|css|js|map|pdf|txt|woff2?|ttf|eot)$/i.test(pathname) ||
+    pathname.startsWith("/api/auth")
   ) {
     return NextResponse.next();
   }
 
-  // 2) Public routes that should not require auth
-  const publicPaths = ["/login", "/api/auth", "/onboarding"];
-  if (publicPaths.some((p) => pathname.startsWith(p))) {
+  const session = await auth();
+
+  // ✅ If user is already logged in and hits /login, bounce to callback or /avtaler
+  if (session && pathname === "/login") {
+    const target = url.searchParams.get("callbackUrl") || "/avtaler";
+    return NextResponse.redirect(new URL(target, url.origin));
+  }
+
+  // Public routes
+  if (pathname.startsWith("/login") || pathname.startsWith("/onboarding")) {
     return NextResponse.next();
   }
-  
-  // 3) Auth-gate everything else
-  const session = await auth();
+
+  // Require auth for everything else
   if (!session) {
     const login = new URL("/login", url.origin);
     login.searchParams.set("callbackUrl", pathname);
     return NextResponse.redirect(login);
-  }
-
-  // 4) Force onboarding (terms) before app
-  // // @ts-expect-error augmented type on Session.user
-  const accepted = session.user?.acceptedTerms === true;
-  if (!accepted && !pathname.startsWith("/onboarding")) {
-    return NextResponse.redirect(new URL("/onboarding", url.origin));
   }
 
   return NextResponse.next();

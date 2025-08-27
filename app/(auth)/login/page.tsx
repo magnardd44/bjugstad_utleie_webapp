@@ -1,8 +1,9 @@
 // app/login/page.tsx
 "use client";
 
-import { useState } from "react";
-import { useSearchParams } from "next/navigation";
+import { useState, useEffect } from "react";
+import { useSession } from "next-auth/react";
+import { useSearchParams, useRouter } from "next/navigation";
 import { signIn } from "next-auth/react";
 import TermsDialog from "@/components/TermsDialog";
 
@@ -17,6 +18,8 @@ type CreateForm = {
 
 export default function LoginPage() {
   const callbackUrl = useSearchParams().get("callbackUrl") || "/avtaler";
+  const router = useRouter();
+  const { status } = useSession();
   const [mode, setMode] = useState<"login" | "create">("login");
   const [loading, setLoading] = useState(false);
   const [showTerms, setShowTerms] = useState(false);
@@ -37,6 +40,13 @@ export default function LoginPage() {
   const termsOk = form.accepted;
 
   const formValid = nameOk && companyOk && roleOk && phoneOk && termsOk;
+
+  // If we reach here via client navigation and are already authed, leave immediately
+  useEffect(() => {
+    if (status === "authenticated") {
+      router.replace(callbackUrl);
+    }
+  }, [status, callbackUrl, router]);
 
   async function handleLogin() {
     setLoading(true);
@@ -114,7 +124,7 @@ export default function LoginPage() {
                   onChange={(e) =>
                     setForm((f) => ({ ...f, firstName: e.target.value }))
                   }
-                className="w-full rounded-md border-2 border-white/80 bg-transparent px-3 py-2 text-white placeholder-white/70 focus:border-blue-400 focus:ring-2 focus:ring-blue-400"
+                  className="w-full rounded-md border-2 border-white/80 bg-transparent px-3 py-2 text-white placeholder-white/70 focus:border-blue-400 focus:ring-2 focus:ring-blue-400"
                 />
                 <input
                   placeholder="Etternavn"
@@ -131,13 +141,13 @@ export default function LoginPage() {
                 onChange={(e) =>
                   setForm((f) => ({ ...f, company: e.target.value }))
                 }
-                  className="w-full rounded-md border-2 border-white/80 bg-transparent px-3 py-2 text-white placeholder-white/70 focus:border-blue-400 focus:ring-2 focus:ring-blue-400"
+                className="w-full rounded-md border-2 border-white/80 bg-transparent px-3 py-2 text-white placeholder-white/70 focus:border-blue-400 focus:ring-2 focus:ring-blue-400"
               />
               <input
                 placeholder="Rolle i selskapet"
                 value={form.role}
                 onChange={(e) => setForm((f) => ({ ...f, role: e.target.value }))}
-                  className="w-full rounded-md border-2 border-white/80 bg-transparent px-3 py-2 text-white placeholder-white/70 focus:border-blue-400 focus:ring-2 focus:ring-blue-400"
+                className="w-full rounded-md border-2 border-white/80 bg-transparent px-3 py-2 text-white placeholder-white/70 focus:border-blue-400 focus:ring-2 focus:ring-blue-400"
 
               />
               <input
@@ -146,7 +156,7 @@ export default function LoginPage() {
                 onChange={(e) =>
                   setForm((f) => ({ ...f, phone: e.target.value }))
                 }
-                  className="w-full rounded-md border-2 border-white/80 bg-transparent px-3 py-2 text-white placeholder-white/70 focus:border-blue-400 focus:ring-2 focus:ring-blue-400"
+                className="w-full rounded-md border-2 border-white/80 bg-transparent px-3 py-2 text-white placeholder-white/70 focus:border-blue-400 focus:ring-2 focus:ring-blue-400"
 
               />
             </div>
