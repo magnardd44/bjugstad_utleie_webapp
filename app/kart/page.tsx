@@ -1,11 +1,8 @@
-import React from 'react';
+// app/kart/page.tsx
+export const revalidate = 0; // page itself doesn't fetch; let provider control caching
 
-const test = () => {
-    return (
-        <div className='h-screen flex justify-center items-center'>
-           <h1 className='text-3xl'>KART</h1>
-        </div>
-    );
+import Map from "./Map";
+
+export default function KartPage() {
+    return <Map />; // no props -> Map will read context
 }
-
-export default test;

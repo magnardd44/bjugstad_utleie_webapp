@@ -1,0 +1,29 @@
+{
+  "name": "",
+  "version": "1.0.0",
+  "description": "",
+  "main": "dist/src/functions/*.js",
+  "scripts": {
+    "build": "tsc",
+    "watch": "tsc -w",
+    "clean": "rimraf dist",
+    "prestart": "npm run clean && npm run build",
+    "start": "func start",
+    "publish": "func azure functionapp publish oem-webapp-function",
+    "test": "echo \"No tests yet...\""
+  },
+  "dependencies": {
+    "@azure/functions": "^4.0.0",
+    "@azure/identity": "^4.12.0",
+    "@azure/keyvault-secrets": "^4.10.0",
+    "axios": "^1.12.1",
+    "pg": "^8.16.3"
+  },
+  "devDependencies": {
+    "@types/node": "^20.19.14",
+    "@types/pg": "^8.15.5",
+    "azure-functions-core-tools": "^4.x",
+    "rimraf": "^5.0.0",
+    "typescript": "^5.9.2"
+  }
+}

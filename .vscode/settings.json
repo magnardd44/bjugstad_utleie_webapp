@@ -1,0 +1,23 @@
+{
+    "sqltools.connections": [
+        {
+            "pgOptions": {
+                "ssl": {
+                    "rejectUnauthorized": true,
+                    "requestCert": false
+                },
+                "connectionTimeoutMillis": 8000,
+                "max": 5
+            },
+            "previewLimit": 50,
+            "server": "oem-webapp-server.postgres.database.azure.com",
+            "port": 5432,
+            "driver": "PostgreSQL",
+            "name": "oem-webapp-postgres",
+            "database": "postgres",
+            "username": "oem_webapp_admin",
+            "password": "#Bjugstad.2025!",
+            "connectionTimeout": 10000
+        }
+    ]
+}
