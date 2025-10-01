@@ -8,14 +8,8 @@ import "maplibre-gl/dist/maplibre-gl.css";
 import { SunIcon, MoonIcon } from "@heroicons/react/24/solid";
 import { Flag, FlagOff, Route, RouteOff, Text as TextIcon, ListX } from "lucide-react";
 import { useMachines } from "@/components/MachinesContext";
+import type { MachineFeature, MachinesFC } from "@/types/machines";
 
-type MachineProps = {
-    id: string | number;
-    name: string;
-    last_updated?: string | number | null;
-};
-type MachinesFC = FeatureCollection<Point, MachineProps>;
-type MachineFeature = Feature<Point, MachineProps>;
 type Props = { features?: MachinesFC };
 
 const MT_KEY = process.env.NEXT_PUBLIC_MAPTILER_KEY;
@@ -548,7 +542,7 @@ export default function MapView({ features }: Props) {
                                 <th className="px-3 py-2">Navn</th>
                                 <th className="w-36 px-3 py-2">Long</th>
                                 <th className="w-36 px-3 py-2">Lat</th>
-                                <th className="w-48 px-3 py-2">Sist oppdatert</th>
+                                <th className="w-48 px-3 py-2">Sist sett</th>
                             </tr>
                         </thead>
                         <tbody className="text-sm">
@@ -556,7 +550,7 @@ export default function MapView({ features }: Props) {
                                 const [lng, lat] = (f.geometry as Point).coordinates as [number, number];
                                 const id = f.properties?.id;
                                 const name = f.properties?.name ?? "Maskin";
-                                const last = f.properties?.last_updated ?? null;
+                                const last = f.properties?.last_pos_reported_at ?? null;
                                 const isSelected = String(selectedId) === String(id);
 
                                 return (
