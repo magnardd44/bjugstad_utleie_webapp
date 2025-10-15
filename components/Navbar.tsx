@@ -1,3 +1,4 @@
+// components/Navbar.tsx
 "use client";
 
 import { useState } from "react";
@@ -42,10 +43,9 @@ export default function ResponsiveNav() {
           href={href}
           onClick={() => setIsOpen(false)}
           className={`flex items-center gap-3 rounded px-3 py-2 text-sm font-medium transition-colors cursor-pointer
-            ${
-              active
-                ? "bg-white/20 text-white"
-                : "text-slate-200 hover:bg-white/10 hover:text-white"
+            ${active
+              ? "bg-white/20 text-white"
+              : "text-slate-200 hover:bg-white/10 hover:text-white"
             }`}
         >
           {icon}
