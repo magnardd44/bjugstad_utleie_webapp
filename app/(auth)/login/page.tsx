@@ -1,11 +1,17 @@
 // app/(auth)/login/page.tsx
+// Purpose: UI to start authentication. In prod it calls signIn("vipps"),
+// which sends the user into the Vipps OAuth flow configured in lib/auth.ts.
+// In dev it uses signIn("credentials") to skip Vipps.
+// After successful auth, NextAuth redirects to `callbackUrl` or /onboarding/complete.
+
 "use client";
 
 import { useState, useEffect } from "react";
-import { useSession } from "next-auth/react";
+import { useSession } from "next-auth/react"; // reads session shaped by callbacks in lib/auth.ts
 import { useSearchParams, useRouter } from "next/navigation";
-import { signIn } from "next-auth/react";
+import { signIn } from "next-auth/react"; // client helper that talks to /api/auth/* (handlers from lib/auth.ts)
 import TermsDialog from "@/components/TermsDialog";
+import { IS_DEV, USE_CREDENTIALS_PROVIDER_FOR_DEV_ONLY } from "@/lib/constants";
 
 type CreateForm = {
   firstName: string;
@@ -17,9 +23,11 @@ type CreateForm = {
 };
 
 export default function LoginPage() {
+  // If middleware redirected here, it'll attach ?callbackUrl=...
+  // After completing Vipps, NextAuth will send the user back to this path.
   const callbackUrl = useSearchParams().get("callbackUrl") || "/avtaler";
   const router = useRouter();
-  const { status } = useSession();
+  const { status } = useSession(); // based on JWT/session produced by lib/auth.ts callbacks
   const [mode, setMode] = useState<"login" | "create">("login");
   const [loading, setLoading] = useState(false);
   const [showTerms, setShowTerms] = useState(false);
@@ -41,7 +49,8 @@ export default function LoginPage() {
 
   const formValid = nameOk && companyOk && roleOk && phoneOk && termsOk;
 
-  // If we reach here via client navigation and are already authed, leave immediately
+  // If we’re already authenticated (session from NextAuth/lib/auth.ts),
+  // don't show the login screen—go straight to callbackUrl.
   useEffect(() => {
     if (status === "authenticated") {
       router.replace(callbackUrl);
@@ -50,22 +59,26 @@ export default function LoginPage() {
 
   async function handleLogin() {
     setLoading(true);
-    if (process.env.NODE_ENV === "development") {
-      // Real NextAuth session via Credentials
+    if (IS_DEV && USE_CREDENTIALS_PROVIDER_FOR_DEV_ONLY) {
+      // Dev-only provider configured in lib/auth.ts.
+      // This posts to /api/auth/signin/credentials (handled by NextAuth handlers).
       await signIn("credentials", { callbackUrl });
       return;
     }
-    // Production: Vipps
+    // Production path: kick off Vipps OAuth.
+    // This posts to /api/auth/signin/vipps, which redirects to Vipps,
+    // and Vipps will redirect back to /api/auth/callback/vipps (handlers from lib/auth.ts).
     await signIn("vipps", { callbackUrl });
   }
 
-
   async function handleCreate() {
-    // client-side guards
+    // Client-side validation only; the “create” path still authenticates via Vipps.
     if (!form.accepted) return;
     setLoading(true);
 
-    // Save draft for the /onboarding/complete step to persist into DB
+    // Stash onboarding data locally so it survives the Vipps redirect roundtrip.
+    // The /onboarding/complete page should read this and persist to DB (via Prisma),
+    // then set acceptedTerms on the user so the jwt/session callbacks expose it.
     localStorage.setItem(
       "onboarding",
       JSON.stringify({
@@ -78,6 +91,7 @@ export default function LoginPage() {
       })
     );
 
+    // After Vipps completes, land on /onboarding/complete to finish creating the user.
     await signIn("vipps", { callbackUrl: "/onboarding/complete" });
   }
 
@@ -115,7 +129,7 @@ export default function LoginPage() {
           </>
         ) : (
           <>
-            {/* Create user form (inline in the card) */}
+            {/* Inline "create user" details (still verified via Vipps) */}
             <div className="grid grid-cols-1 gap-3">
               <div className="grid grid-cols-2 gap-3">
                 <input
@@ -148,7 +162,6 @@ export default function LoginPage() {
                 value={form.role}
                 onChange={(e) => setForm((f) => ({ ...f, role: e.target.value }))}
                 className="w-full rounded-md border-2 border-white/80 bg-transparent px-3 py-2 text-white placeholder-white/70 focus:border-blue-400 focus:ring-2 focus:ring-blue-400"
-
               />
               <input
                 placeholder="Telefon"
@@ -160,7 +173,7 @@ export default function LoginPage() {
               />
             </div>
 
-            {/* Terms + link opens modal */}
+            {/* Terms check gates the Vipps sign-in button */}
             <label className="mt-4 flex items-start gap-2 text-sm">
               <input
                 type="checkbox"
@@ -204,7 +217,7 @@ export default function LoginPage() {
         )}
       </div>
 
-      {/* Modal with scrollable terms */}
+      {/* Terms are shown in a modal; separate from NextAuth/Vipps internals */}
       <TermsDialog open={showTerms} onClose={() => setShowTerms(false)} />
     </main>
   );

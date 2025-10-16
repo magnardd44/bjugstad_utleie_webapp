@@ -1,12 +1,17 @@
 // middleware.ts
+// Purpose: Gate your app’s routes. Uses NextAuth session (via `auth()` from lib/auth.ts)
+// which is configured with the Vipps provider. If no session, redirect to /login
+// (NextAuth will use the Vipps flow when the user clicks the login button).
+
 import { NextResponse } from "next/server";
-import { auth } from "@/lib/auth";
+import { auth } from "@/lib/auth"; // <-- from lib/auth.ts (NextAuth configured with Vipps)
 
 export async function middleware(req: Request) {
   const url = new URL(req.url);
   const pathname = url.pathname;
 
-  // Allow static assets and Next internals
+  // Allow static assets, Next internals, and NextAuth endpoints to pass through.
+  // NOTE: We must not intercept /api/auth/* because that's where NextAuth (and Vipps callbacks) run.
   if (
     pathname.startsWith("/_next") ||
     pathname === "/favicon.ico" ||
@@ -16,20 +21,26 @@ export async function middleware(req: Request) {
     return NextResponse.next();
   }
 
+  // Reads the session from NextAuth using the JWT/cookies
+  // `auth()` is created by NextAuth(authConfig) in lib/auth.ts and
+  // reflects whatever provider was used (Vipps in prod, Credentials in dev).
   const session = await auth();
 
-  // ✅ If user is already logged in and hits /login, bounce to callback or /avtaler
+  // If user is already authenticated and opens /login manually,
+  // send them to the intended callback (or /avtaler).
   if (session && pathname === "/login") {
     const target = url.searchParams.get("callbackUrl") || "/avtaler";
     return NextResponse.redirect(new URL(target, url.origin));
   }
 
-  // Public routes
+  // Public routes: allow login and onboarding steps without a session.
+  // The onboarding flow starts a Vipps sign-in and then lands on /onboarding/complete.
   if (pathname.startsWith("/login") || pathname.startsWith("/onboarding")) {
     return NextResponse.next();
   }
 
-  // Require auth for everything else
+  // Everything else requires auth: if no session, redirect to /login and
+  // pass the current path as callbackUrl so NextAuth returns here after Vipps completes.
   if (!session) {
     const login = new URL("/login", url.origin);
     login.searchParams.set("callbackUrl", pathname);
@@ -39,7 +50,8 @@ export async function middleware(req: Request) {
   return NextResponse.next();
 }
 
-// Only run on routes that aren't static files, Next internals, or auth endpoints
+// Scope middleware to everything except static/Next internals/NextAuth endpoints.
+// This prevents breaking the Vipps OAuth callback handled by /api/auth/*.
 export const config = {
   matcher: [
     "/((?!_next/static|_next/image|api/auth|favicon.ico|.*\\.(?:png|jpg|jpeg|svg|gif|ico|css|js|map|pdf|txt|woff|woff2|ttf|eot)$).*)",

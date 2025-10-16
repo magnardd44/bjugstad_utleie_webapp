@@ -15,6 +15,7 @@ import {
   UserIcon,
   ArrowLeftEndOnRectangleIcon, // logout icon
 } from "@heroicons/react/24/outline";
+import { IS_DEV } from "@/lib/constants";
 
 type NavItem = {
   href: string;
@@ -54,8 +55,6 @@ export default function ResponsiveNav() {
       );
     });
 
-  const isDev = process.env.NODE_ENV !== "production";
-
   return (
     <>
       {/* Mobile topbar */}
@@ -79,7 +78,7 @@ export default function ResponsiveNav() {
 
         <div className="p-4 border-t border-white/10 flex flex-col gap-3">
           {/* DEV badge (only in dev mode) */}
-          {isDev && (
+          {IS_DEV && (
             <div className="rounded bg-yellow-500 text-black text-xs font-bold px-2 py-1 text-center">
               DEV MODE
             </div>
@@ -112,7 +111,7 @@ export default function ResponsiveNav() {
 
         {/* Mobile logout button */}
         <div className="p-4 border-t border-white/10 flex flex-col gap-3">
-          {isDev && (
+          {IS_DEV && (
             <div className="rounded bg-yellow-500 text-black text-xs font-bold px-2 py-1 text-center">
               DEV MODE
             </div>

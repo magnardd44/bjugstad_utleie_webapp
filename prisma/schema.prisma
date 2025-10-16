@@ -14,48 +14,61 @@ datasource db {
 }
 
 model User {
-  id                     String   @id @default(cuid())
-  name                   String?
-  email                  String?  @unique
-  image                  String?
-  phone                  String?
-  company                String?
-  role                   String?
-  acceptedTerms          Boolean  @default(false)
-  acceptedTermsAt        DateTime?
-  acceptedTermsVersion   String?  // e.g. "v1"
+  id                   String   @id @default(cuid())
+  name                 String?
+  email                String?  @unique
+  emailVerified        DateTime? @map("email_verified")
+  phone                String?
+  company              String?
+  role                 String?
+  acceptedTerms        Boolean  @default(false) @map("accepted_terms")
+  acceptedTermsAt      DateTime? @map("accepted_terms_at")
+  acceptedTermsVersion String?  @map("accepted_terms_version") // e.g. "v1"
 
-  accounts               Account[]
-  sessions               Session[]
-  createdAt              DateTime @default(now())
-  updatedAt              DateTime @updatedAt
+  // A user can have many accounts and sessions
+  accounts             Account[]
+  sessions             Session[]
+  createdAt            DateTime @default(now()) @map("created_at")
+  updatedAt            DateTime @updatedAt @map("updated_at")
+
+  @@map("users")
 }
 
+// Stores an external login (e.g., Vipps, Google)
 model Account {
-  id                 String  @id @default(cuid())
-  userId             String
-  type               String
-  provider           String
-  providerAccountId  String
-  refresh_token      String?
-  access_token       String?
-  expires_at         Int?
-  token_type         String?
-  scope              String?
-  id_token           String?
-  session_state      String?
+  id                String  @id @default(cuid())
+  userId            String  @map("user_id")          // userId links this account to a User
+  type              String
+  provider          String
+  providerAccountId String  @map("provider_account_id")
 
+  refreshToken      String? @map("refresh_token")
+  accessToken       String? @map("access_token")
+  expiresAt         Int?    @map("expires_at")
+  tokenType         String? @map("token_type")
+  scope             String?
+  idToken           String? @map("id_token")
+  sessionState      String? @map("session_state")
+
+  // If a user is deleted, their accounts are deleted too
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // Can’t have the same provider ID twice
   @@unique([provider, providerAccountId])
+  @@map("accounts")
 }
 
+// Stores who is logged in and until when (expires).
 model Session {
-  id           String   @id @default(cuid())
-  sessionToken String   @unique
-  userId       String
-  expires      DateTime
+  id            String   @id @default(cuid())
+  sessionToken  String   @unique @map("session_token")
+  userId        String   @map("user_id")
+  expires       DateTime
 
+  // If the user is deleted, their sessions go away as well.
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("sessions")
 }
 
 model VerificationToken {
@@ -64,5 +77,20 @@ model VerificationToken {
   expires    DateTime
 
   @@unique([identifier, token])
+  @@map("verification_tokens")
 }
 
+model Machine {
+  id                 String   @id
+  name               String?
+  oemName            String?  @map("oem_name")
+  firstSeen          DateTime @default(now()) @map("first_seen")
+  lastUpdated        DateTime @updatedAt @map("last_updated")
+  lastPosReportedAt  DateTime? @map("last_pos_reported_at")
+  lastPosLatitude    Float?    @map("last_pos_latitude")
+  lastPosLongitude   Float?    @map("last_pos_longitude")
+
+  @@index([lastUpdated(sort: Desc)], map: "idx_machines_last_updated")
+  @@index([lastPosReportedAt(sort: Desc)], map: "idx_machines_last_pos_reported_at")
+  @@map("machines")
+}

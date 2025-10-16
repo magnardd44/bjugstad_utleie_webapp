@@ -1,4 +1,6 @@
 // src/services/hydrema.ts
+// Purpose: Service to interact with the Hydrema API to fetch machine data.
+// Uses client credentials flow to get an access token and caches it.
 import axios, {
     AxiosInstance,
     AxiosHeaders,
@@ -85,7 +87,7 @@ function extractItems(respData: MachinesResponse): HydremaMachine[] {
     return [];
 }
 
-export async function fetchAllMachines(): Promise<HydremaMachine[]> {
+export async function fetchAllHydremaMachines(): Promise<HydremaMachine[]> {
     const client = await getHttp();
     let url: string | null = "/machines";         // ensure leading slash
     const results: HydremaMachine[] = [];
