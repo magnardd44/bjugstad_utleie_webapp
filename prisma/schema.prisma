@@ -5,7 +5,18 @@
 // Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
 
 generator client {
-  provider = "prisma-client-js"
+  provider      = "prisma-client-js"
+  binaryTargets = ["native", "debian-openssl-3.0.x"]
+}
+
+// Generate a second Prisma Client for the Azure Functions project so it
+// lands under `azure/function/node_modules/@prisma/client`.
+// This avoids the client being generated only at the repo root when
+// running `prisma generate` against this shared schema.
+generator client_functions {
+  provider      = "prisma-client-js"
+  output        = "../azure/function/node_modules/.prisma/client"
+  binaryTargets = ["native", "debian-openssl-3.0.x"]
 }
 
 datasource db {

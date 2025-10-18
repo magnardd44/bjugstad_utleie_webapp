@@ -42,31 +42,6 @@ export async function query<T = any>(text: string, params?: any[]): Promise<Quer
     return p.query(text, params);
 }
 
-/** Ensure the target table and helpful indexes exist. Safe to call on each run. */
-export async function ensureMachinesTable(): Promise<void> {
-    // Create with the new columns if it's a fresh DB
-    await query(`
-    CREATE TABLE IF NOT EXISTS machines (
-      id                    TEXT PRIMARY KEY,
-      name                  TEXT,
-      oem_name              TEXT,
-      first_seen            TIMESTAMPTZ NOT NULL DEFAULT now(),
-      last_updated          TIMESTAMPTZ NOT NULL DEFAULT now(),
-      last_pos_reported_at  TIMESTAMPTZ,
-      last_pos_latitude     DOUBLE PRECISION,
-      last_pos_longitude    DOUBLE PRECISION
-    );
-  `);
-
-    // If the table existed before, make sure the new columns are present
-    await query(`ALTER TABLE machines ADD COLUMN IF NOT EXISTS last_pos_reported_at TIMESTAMPTZ;`);
-    await query(`ALTER TABLE machines ADD COLUMN IF NOT EXISTS last_pos_latitude DOUBLE PRECISION;`);
-    await query(`ALTER TABLE machines ADD COLUMN IF NOT EXISTS last_pos_longitude DOUBLE PRECISION;`);
-
-    await query(`CREATE INDEX IF NOT EXISTS idx_machines_last_updated ON machines(last_updated DESC);`);
-    await query(`CREATE INDEX IF NOT EXISTS idx_machines_last_pos_time ON machines(last_pos_reported_at DESC);`);
-}
-
 export type MachineRow = {
     id: string;
     name: string | null;

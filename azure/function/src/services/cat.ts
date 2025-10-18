@@ -1,4 +1,5 @@
 // azure/function/src/services/cat.ts
+// Source: https://digital.cat.com/apis/api-list/prod/iso15143-aemp-20-0#/Snapshot/getFleetSnapshot
 import axios, {
     AxiosInstance,
     AxiosHeaders,
@@ -7,13 +8,16 @@ import axios, {
 } from "axios";
 import { requireConfig } from "../shared/kv";
 
-/**
- * Token response shape (standard OAuth2).
- */
+/** Standard OAuth2 token response */
 type TokenResp = { access_token: string; token_type?: string; expires_in?: number };
 
 let tokenCache: { token?: string; exp?: number } = {};
 let http: AxiosInstance | null = null;
+
+/** Simple uuid v4 */
+function uuidv4(): string {
+    return crypto.randomUUID();
+}
 
 async function getToken(): Promise<string> {
     const now = Math.floor(Date.now() / 1000);
@@ -22,14 +26,15 @@ async function getToken(): Promise<string> {
     const tokenUrl = await requireConfig("CAT_TOKEN_URL");
     const clientId = await requireConfig("CAT_CLIENT_ID");
     const clientSecret = await requireConfig("CAT_CLIENT_SECRET");
-    const scope = await requireConfig("CAT_SCOPE");
+    // The CAT API (AAD v2) expects scope to target the resource App ID URI
+    // in the form: "{resource-app-id-uri}/.default".
+    const scopeRaw = await requireConfig("CAT_SCOPE");
 
     const body = new URLSearchParams({
         grant_type: "client_credentials",
         client_id: clientId,
         client_secret: clientSecret,
-        // Some CAT tenants may require scope/audience; if so add a secret:
-        scope// e.g. "api://.../.default"
+        scope: `${clientId}/${scopeRaw}`
     });
 
     const resp = await axios.post<TokenResp>(tokenUrl, body.toString(), {
@@ -59,10 +64,36 @@ async function getHttp(): Promise<AxiosInstance> {
         const headers = AxiosHeaders.from(cfg.headers);
         headers.set("Authorization", `Bearer ${await getToken()}`);
         headers.set("Accept", "application/json");
+        headers.set("X-Cat-API-Tracking-Id", uuidv4()); // Unique ID per request
         cfg.headers = headers;
+        console.log("headers set");
         console.log(`[cat] -> ${cfg.method?.toUpperCase()} ${baseURL}${cfg.url}`);
         return cfg;
     });
+
+    // LOG FULL RESPONSE
+    const LOG_FULL = 1;
+    http.interceptors.response.use(
+        (resp) => {
+            if (LOG_FULL) {
+                const urlShow =
+                    (resp.request && resp.request.responseURL) ||
+                    `${baseURL}${resp.config.url ?? ""}`;
+                // Build a serializable snapshot
+                const snapshot = {
+                    url: urlShow,
+                    status: resp.status,
+                    headers: resp.headers,
+                    data: resp.data,
+                };
+
+                const txt = JSON.stringify(snapshot, null, 2);
+                console.log("FULL RESPONSE:");
+                console.log(txt);
+            }
+            return resp;
+        });
+
 
     return http;
 }
@@ -71,161 +102,158 @@ async function getHttp(): Promise<AxiosInstance> {
  * Minimal AEMP-ish asset + optional embedded geo.
  * Different OEMs vary; we keep this permissive.
  */
+// TODO: Reformat to match the actual CAT response format (see FleetJson schema in https://digital.cat.com/apis/api-list/prod/iso15143-aemp-20-0#/)
 export type CatMachine = {
-    id: string;
-    name?: string | null;
-    oemName?: string | null;
-    geo?: {
-        time?: number;        // ms since epoch
-        longitude?: number;
-        latitude?: number;
+    id: string;                     // we prefix with "CAT:" to avoid cross-OEM collisions
+    name?: string | null;           // friendly name (model if nothing else)
+    oemName?: string | null;        // "CAT"
+    header?: {
+        model?: string | null;
+        equipmentId?: string | null;
+        serialNumber?: string | null;
     };
+    metrics?: {
+        hours?: number | null; hoursAt?: number | null;         // ms
+        idleHours?: number | null;
+        fuelUsed?: number | null; fuelUsedAt?: number | null;
+        fuelUsedLast24?: number | null; fuelUsedLast24At?: number | null;
+        odometerKm?: number | null; odometerAt?: number | null;
+        fuelRemainingPct?: number | null; defRemainingPct?: number | null;
+        engineRunning?: boolean | null; engineAt?: number | null;
+        payloadKg?: number | null; payloadAt?: number | null;
+        loadCount?: number | null; loadCountAt?: number | null;
+    };
+    geo?: { time?: number; longitude?: number; latitude?: number };
 };
 
-// Common AEMP container variants we’ve seen across OEMs
-type Envelope<T> =
-    | T[]
-    | { data?: T[]; items?: T[]; value?: T[]; next?: string; links?: { next?: string }; page?: { next?: string } };
+/** CAT ISO 15143 "fleet" page shape (simplified) */
+type CatFleetPage = {
+    Links?: Array<{ Rel: string; Href: string }>;
+    Equipment?: any[];
+    Version?: string;
+    SnapshotTime?: string;
+};
 
-function extractItems<T>(data: Envelope<T>): T[] {
-    if (Array.isArray(data)) return data;
-    if ((data as any)?.data && Array.isArray((data as any).data)) return (data as any).data;
-    if ((data as any)?.items && Array.isArray((data as any).items)) return (data as any).items;
-    if ((data as any)?.value && Array.isArray((data as any).value)) return (data as any).value;
-    return [];
+function tsToMs(ts?: string | number): number | undefined {
+    if (ts == null) return undefined;
+    if (typeof ts === "number") return ts > 10_000_000_000 ? ts : ts * 1000;
+    const v = Date.parse(ts);
+    return Number.isNaN(v) ? undefined : v;
 }
 
-function extractNext(data: any, headers: Record<string, any>): string | null {
-    const hlink: string | undefined = headers?.link || headers?.Link;
-    const headerNext = hlink?.match(/<([^>]+)>\s*;\s*rel="?next"?/i)?.[1];
-    const bodyNext =
-        data?.next ||
-        data?.links?.next ||
-        data?.page?.next ||
-        data?.pagination?.next;
-    return typeof headerNext === "string" ? headerNext : (typeof bodyNext === "string" ? bodyNext : null);
-}
+function mapAssetToMachine(e: any): CatMachine | null {
+    const h = e?.EquipmentHeader ?? {};
+    const serial = h.SerialNumber ?? null;
+    const equipId = h.EquipmentID ?? null;
+    if (!serial && !equipId) return null;
 
-/**
- * Best-effort mapper from a raw CAT AEMP Asset JSON to our CatMachine DTO.
- * We deliberately probe several likely field names without assuming a single schema.
- */
-function mapAssetToMachine(raw: any): CatMachine | null {
-    if (!raw) return null;
+    const id = `CAT:${serial ?? equipId}`;
+    const model = h.Model ?? null;
 
-    // Identify a stable id (prefer AEMP asset identifiers)
-    const id =
-        raw.assetId ||
-        raw.id ||
-        raw.uid ||
-        raw.machineId ||
-        raw.serialNumber || // last resort, but often unique
-        raw.deviceId;
+    const loc = e?.Location ?? {};
+    const lat = loc.Latitude ?? loc.latitude;
+    const lon = loc.Longitude ?? loc.longitude;
+    const geo = (lat != null && lon != null)
+        ? { latitude: Number(lat), longitude: Number(lon), time: tsToMs(loc.datetime) }
+        : undefined;
 
-    if (!id) return null;
-
-    const name =
-        raw.assetName ||
-        raw.name ||
-        raw.displayName ||
-        raw.description ||
-        null;
-
-    // Try to find embedded position if present on the asset payload
-    // Common AEMP patterns: lastLocation, lastKnownLocation, location, position
-    const loc =
-        raw.lastLocation ||
-        raw.lastKnownLocation ||
-        raw.location ||
-        raw.position ||
-        (raw.geo && typeof raw.geo === "object" ? raw.geo : undefined);
-
-    let geo: CatMachine["geo"] | undefined = undefined;
-    if (loc) {
-        const ts =
-            loc.timestamp ||
-            loc.time ||
-            loc.reportedAt ||
-            loc.measurementTime ||
-            raw.lastLocationTimestamp;
-
-        const lat = loc.latitude ?? loc.lat ?? loc.y;
-        const lon = loc.longitude ?? loc.lon ?? loc.x;
-
-        if (lat != null && lon != null) {
-            const ms = typeof ts === "number"
-                ? (ts > 10_000_000_000 ? ts : ts * 1000) // seconds vs ms
-                : (ts ? Date.parse(ts) : undefined);
-            geo = {
-                time: ms && !Number.isNaN(ms) ? ms : undefined,
-                latitude: Number(lat),
-                longitude: Number(lon),
-            };
-        }
-    }
-
-    return {
-        id: String(id),
-        name: name ?? null,
+    const m: CatMachine = {
+        id,
+        name: model ?? serial ?? equipId ?? null,
         oemName: "CAT",
+        header: {
+            model,
+            equipmentId: equipId,
+            serialNumber: serial,
+        },
+        metrics: {
+            hours: e?.CumulativeOperatingHours?.Hour ?? null,
+            hoursAt: tsToMs(e?.CumulativeOperatingHours?.datetime),
+            idleHours: e?.CumulativeIdleHours?.Hour ?? null,
+
+            fuelUsed: e?.FuelUsed?.FuelConsumed ?? null,
+            fuelUsedAt: tsToMs(e?.FuelUsed?.datetime),
+            fuelUsedLast24: e?.FuelUsedLast24?.FuelConsumed ?? null,
+            fuelUsedLast24At: tsToMs(e?.FuelUsedLast24?.datetime),
+
+            odometerKm: e?.Distance?.Odometer ?? null,
+            odometerAt: tsToMs(e?.Distance?.datetime),
+
+            fuelRemainingPct: e?.FuelRemaining?.Percent ?? null,
+            defRemainingPct: e?.DEFRemaining?.Percent ?? null,
+
+            engineRunning: e?.EngineStatus?.Running ?? null,
+            engineAt: tsToMs(e?.EngineStatus?.datetime),
+
+            payloadKg: e?.CumulativePayloadTotals?.Payload ?? null,
+            payloadAt: tsToMs(e?.CumulativePayloadTotals?.datetime),
+
+            loadCount: e?.CumulativeLoadCount?.Count ?? null,
+            loadCountAt: tsToMs(e?.CumulativeLoadCount?.datetime),
+        },
         geo,
     };
+
+    return m;
 }
 
-/**
- * Fetch all assets from CAT AEMP, optionally including last position when provided inline.
- * If inline location is not present, we still return assets; later we can augment with a
- * `/locations` call keyed by asset ids (left as an optimization if needed).
- */
+function nextFromLinks(links?: Array<{ Rel: string; Href: string }>): string | null {
+    if (!Array.isArray(links)) return null;
+    const n = links.find(l => String(l.Rel).toLowerCase() === "next");
+    return n?.Href ?? null;
+}
+
+/** Fetch every fleet page and map to CatMachine[] */
 export async function fetchAllCatMachines(): Promise<CatMachine[]> {
     const client = await getHttp();
-    const assetsPath = (await requireConfig("CAT_AEMP_ASSETS_PATH").catch(() => "/assets")) || "/assets";
-    const pageSize = Number(process.env.CAT_PAGE_SIZE || "200");
 
-    let url: string | null = assetsPath.startsWith("/") ? assetsPath : `/${assetsPath}`;
+    let pageNum = 1;
+    let url: string | null = `/fleet/${pageNum}`;
     const out: CatMachine[] = [];
-    let page = 0;
 
     while (url) {
-        page += 1;
         try {
-            const resp = await client.get<Envelope<any>>(url, {
-                params: {
-                    // Not all providers honor these; harmless if ignored
-                    pageSize,
-                    // Some AEMP variants support changedSince / updatedAfter etc.
-                    // changedSince: new Date(Date.now() - 24*3600*1000).toISOString(),
-                    // include: "location", // Only if CAT supports it; safe to omit by default
-                },
-                validateStatus: () => true,
-            });
+            const resp = await client.get<CatFleetPage>(url, { validateStatus: () => true });
+            //console.log("resp", resp);
+            const showUrl = resp.request?.responseURL || `${client.defaults.baseURL}${url}`;
+            console.log(`[cat] <- ${resp.status} for ${showUrl}`);
 
-            console.log(`[cat] <- ${resp.status} for ${client.defaults.baseURL}${url}`);
             if (resp.status >= 400) {
                 const bodyTxt = typeof resp.data === "string" ? resp.data : JSON.stringify(resp.data);
                 throw new Error(`GET ${url} failed ${resp.status}: ${bodyTxt}`);
             }
 
-            const items = extractItems<any>(resp.data);
+            const items = resp.data?.Equipment ?? [];
             for (const raw of items) {
                 const m = mapAssetToMachine(raw);
                 if (m) out.push(m);
             }
 
-            const next = extractNext(resp.data, resp.headers as any);
-            url = typeof next === "string" ? next : null;
-            if (page > 100) break; // safety
+            const nextAbs = nextFromLinks(resp.data?.Links);
+            if (nextAbs) {
+                // If absolute, use as-is; if relative, keep relative
+                url = nextAbs.startsWith("http") ? nextAbs : nextAbs.replace(client.defaults.baseURL || "", "");
+            } else {
+                url = null;
+            }
         } catch (e: any) {
             if (isAxiosError(e)) {
                 const data = e.response?.data;
                 console.error(
-                    `[cat] axios error: status=${e.response?.status} msg=${e.message} body=${typeof data === "string" ? data : JSON.stringify(data)
-                    }`
+                    `[cat] axios error: status=${e.response?.status} msg=${e.message} body=${typeof data === "string" ? data : JSON.stringify(data)}`
                 );
             }
             throw e;
         }
+
+        // safety net to prevent accidental infinite loops
+        if (++pageNum > 500) {
+            console.warn("[cat] pagination safety break after 500 pages");
+            break;
+        }
     }
+    console.log(`[cat] fetched total ${out.length} machines`);
+    //console.log(out);
 
     return out;
 }
