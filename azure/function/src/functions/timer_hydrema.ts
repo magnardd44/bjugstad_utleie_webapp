@@ -17,15 +17,9 @@ app.timer("timer_hydrema", {
             // Fetch machines from Hydrema (includes geo when available)
             const machines = await fetchAllHydremaMachines();
 
-            // Log names (fallback to id). Also show how many have geo.
-            const namesLine = machines.map(m => m.name ?? `id:${m.id}`).join(", ");
-            const withGeo = machines.filter(m => (m as any).geo?.time != null).length;
-            ctx.log(`Machines: ${namesLine}`);
-            ctx.log(`Machines with geo: ${withGeo}/${machines.length}`);
-
             // Map to DB shape (snake_case) + last position
             const rows = machines.map((m: any) => ({
-                id: String(m.id),
+                id: `HYD:${m.id}`,
                 name: m.name ?? null,
                 oem_name: "Hydrema",
                 last_pos_reported_at: m.geo?.time != null ? new Date(Number(m.geo.time)) : null, // ms -> Date (UTC)
@@ -39,7 +33,7 @@ app.timer("timer_hydrema", {
             ctx.log(`Fetched ${machines.length} machines; upserted ${affected}.`);
         } catch (err: any) {
             ctx.error?.(`timer_hydrema error: ${err?.message || err}`);
-            if (err?.stack) ctx.log(err.stack);
+            throw (err instanceof Error ? err : new Error(String(err)));
         }
     },
 });

@@ -1,4 +1,4 @@
 SELECT *
-FROM machines
+FROM account
 ORDER BY id DESC
 LIMIT 5;

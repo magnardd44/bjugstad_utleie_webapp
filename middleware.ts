@@ -4,7 +4,8 @@
 // (NextAuth will use the Vipps flow when the user clicks the login button).
 
 import { NextResponse } from "next/server";
-import { auth } from "@/lib/auth"; // <-- from lib/auth.ts (NextAuth configured with Vipps)
+// Use Edge-safe auth to avoid bundling Prisma/native binaries in middleware
+import { auth } from "@/lib/auth-edge";
 
 export async function middleware(req: Request) {
   const url = new URL(req.url);

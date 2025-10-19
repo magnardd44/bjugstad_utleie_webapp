@@ -4,6 +4,8 @@
 // In dev it uses signIn("credentials") to skip Vipps.
 // After successful auth, NextAuth redirects to `callbackUrl` or /onboarding/complete.
 
+// TEST BRUKER TLF: 45938863
+
 "use client";
 
 import { useState, useEffect } from "react";
@@ -25,12 +27,16 @@ type CreateForm = {
 export default function LoginPage() {
   // If middleware redirected here, it'll attach ?callbackUrl=...
   // After completing Vipps, NextAuth will send the user back to this path.
-  const callbackUrl = useSearchParams().get("callbackUrl") || "/avtaler";
+  const search = useSearchParams();
+  const callbackUrl = search.get("callbackUrl") || "/avtaler";
+  const errorParam = search.get("error");
+  const emailFromVipps = search.get("email");
   const router = useRouter();
   const { status } = useSession(); // based on JWT/session produced by lib/auth.ts callbacks
   const [mode, setMode] = useState<"login" | "create">("login");
   const [loading, setLoading] = useState(false);
   const [showTerms, setShowTerms] = useState(false);
+  const [hideError, setHideError] = useState(false);
 
   const [form, setForm] = useState<CreateForm>({
     firstName: "",
@@ -48,6 +54,26 @@ export default function LoginPage() {
   const termsOk = form.accepted;
 
   const formValid = nameOk && companyOk && roleOk && phoneOk && termsOk;
+
+  // Map NextAuth error codes (error query param) to friendly messages
+  const errorMessage = (() => {
+    if (!errorParam || hideError) return null;
+    switch (errorParam) {
+      case "OAuthAccountNotLinked":
+        return (
+          "E‑postadressen (" + emailFromVipps + ") er allerede knyttet til en eksisterende bruker. Kontakt support for å koble Vipps til kontoen."
+        );
+      case "AccessDenied":
+        return "Tilgang nektet under innlogging. Prøv igjen eller kontakt support.";
+      case "Configuration":
+        return "Det er en feil i serveroppsettet for innlogging.";
+      case "OAuthCallback":
+      case "OAuthCallbackError":
+        return "Noe gikk galt i Vipps‑innloggingen. Prøv igjen.";
+      default:
+        return "Innlogging mislyktes (" + errorParam + "). Prøv igjen.";
+    }
+  })();
 
   // If we’re already authenticated (session from NextAuth/lib/auth.ts),
   // don't show the login screen—go straight to callbackUrl.
@@ -98,6 +124,20 @@ export default function LoginPage() {
   return (
     <main className="min-h-screen flex items-center justify-center bg-gradient-to-b from-[#001a4d] via-[#002c6d] to-[#1c1464] p-6">
       <div className="w-full max-w-md rounded-2xl bg-white/10 backdrop-blur p-8 text-white shadow-xl">
+        {errorMessage && (
+          <div className="mb-4 rounded-lg bg-red-500/15 ring-1 ring-red-400/40 p-3 text-sm text-red-100">
+            <div className="flex items-start gap-2">
+              <span className="flex-1">{errorMessage}</span>
+              <button
+                aria-label="Lukk feil"
+                className="cursor-pointer text-red-200 hover:text-white"
+                onClick={() => setHideError(true)}
+              >
+                ×
+              </button>
+            </div>
+          </div>
+        )}
         <h1 className="text-2xl font-semibold mb-2">
           {mode === "login" ? "Logg inn" : "Opprett bruker"}
         </h1>

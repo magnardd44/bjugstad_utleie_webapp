@@ -17,7 +17,7 @@ import { prisma } from "./prisma";
 import Vipps from "next-auth/providers/vipps";
 import type { NextAuthConfig } from "next-auth";
 import Credentials from "next-auth/providers/credentials";
-import { IS_DEV } from "./constants";
+import { IS_DEV, VIPPS_DATA_REQUESTS } from "./constants";
 import { USE_CREDENTIALS_PROVIDER_FOR_DEV_ONLY } from "./constants";
 
 
@@ -40,6 +40,15 @@ export const authConfig: NextAuthConfig = {
       clientId: process.env.AUTH_VIPPS_ID!,
       clientSecret: process.env.AUTH_VIPPS_SECRET!,
       issuer: process.env.AUTH_VIPPS_ISSUER, // apitest in dev, api in prod
+
+      // Ask Vipps for additional user data (name, email, phone, address)
+      authorization: {
+        params: {
+          // TODO. Make sure we store the data we request in the DB. Also, find a proper way for how to re-update user data later (at every login? after x days?)
+          scope: VIPPS_DATA_REQUESTS,
+        },
+      },
+
     }),
 
     // === Credentials (added in DEV only if flagged) ===
@@ -70,6 +79,59 @@ export const authConfig: NextAuthConfig = {
   },
 
   callbacks: {
+    /**
+    * We intercept the “same email, different provider not yet linked” case
+    * and redirect back to /login with `?error=OAuthAccountNotLinked&email=...`.
+    */
+    async signIn({ user, account, profile }) {
+      // Debug info in dev
+      if (process.env.NODE_ENV !== "production") {
+        console.log("User data available:");
+        console.log("[auth:signIn] user =", JSON.stringify(user, null, 2)); // DB object
+        console.log("[auth:signIn] account =", JSON.stringify(account, null, 2)); // Data returned by Vipps (or other provider)
+        console.log("[auth:signIn] profile =", JSON.stringify(profile, null, 2)); // Vipps API
+      }
+
+      try {
+        const provider = account?.provider;
+        const providerAccountId = account?.providerAccountId;
+
+        const emailAddr =
+          user?.email ?? (typeof (profile as any)?.email === "string" ? (profile as any).email : undefined);
+
+        if (!provider || !providerAccountId || !emailAddr) {
+          return true; // let NextAuth handle the rest
+        }
+
+        // Is there already a user with this email?
+        const existingUser = await prisma.user.findUnique({
+          where: { email: emailAddr },
+          select: { id: true },
+        });
+
+        if (!existingUser) return true;
+
+        // Is that user already linked to this provider?
+        const linked = await prisma.account.findFirst({
+          where: { userId: existingUser.id, provider },
+          select: { id: true },
+        });
+
+        if (!linked) {
+          const origin = process.env.NEXTAUTH_URL!;
+          const url = new URL("/login", origin);
+          url.searchParams.set("error", "OAuthAccountNotLinked");
+          url.searchParams.set("email", emailAddr); // <-- shown by the login page
+          return url.toString(); // cause a redirect instead of throwing the built-in error
+        }
+
+        return true;
+      } catch {
+        // On any unexpected error, fall back to the normal flow.
+        return true;
+      }
+    },
+
     // Runs whenever a JWT is created/updated (e.g., after Vipps callback).
     // Put extra fields you care about onto the token.
     async jwt({ token, user }) {

@@ -72,7 +72,7 @@ async function getHttp(): Promise<AxiosInstance> {
     });
 
     // LOG FULL RESPONSE
-    const LOG_FULL = 1;
+    const LOG_FULL = 0;
     http.interceptors.response.use(
         (resp) => {
             if (LOG_FULL) {
@@ -102,100 +102,53 @@ async function getHttp(): Promise<AxiosInstance> {
  * Minimal AEMP-ish asset + optional embedded geo.
  * Different OEMs vary; we keep this permissive.
  */
-// TODO: Reformat to match the actual CAT response format (see FleetJson schema in https://digital.cat.com/apis/api-list/prod/iso15143-aemp-20-0#/)
+// Keep a permissive shape that matches the API response (PascalCase keys).
 export type CatMachine = {
-    id: string;                     // we prefix with "CAT:" to avoid cross-OEM collisions
-    name?: string | null;           // friendly name (model if nothing else)
-    oemName?: string | null;        // "CAT"
-    header?: {
-        model?: string | null;
-        equipmentId?: string | null;
-        serialNumber?: string | null;
+    EquipmentHeader?: {
+        OEMName?: string;
+        Model?: string;
+        EquipmentID?: string;
+        SerialNumber?: string;
     };
-    metrics?: {
-        hours?: number | null; hoursAt?: number | null;         // ms
-        idleHours?: number | null;
-        fuelUsed?: number | null; fuelUsedAt?: number | null;
-        fuelUsedLast24?: number | null; fuelUsedLast24At?: number | null;
-        odometerKm?: number | null; odometerAt?: number | null;
-        fuelRemainingPct?: number | null; defRemainingPct?: number | null;
-        engineRunning?: boolean | null; engineAt?: number | null;
-        payloadKg?: number | null; payloadAt?: number | null;
-        loadCount?: number | null; loadCountAt?: number | null;
+    Location?: {
+        Latitude?: number;
+        Longitude?: number;
+        Altitude?: number;
+        AltitudeUnits?: string; // "metre"
+        Datetime?: string;      // ISO
     };
-    geo?: { time?: number; longitude?: number; latitude?: number };
+    CumulativeIdleHours?: { Hour?: number; Datetime?: string };
+    CumulativeLoadCount?: { Count?: number; Datetime?: string };
+    DEFRemaining?: { Percent?: number; Datetime?: string };
+
+    CumulativeOperatingHours?: { Hour?: number; Datetime?: string };
+    CumulativePayloadTotals?: { PayloadUnits?: string; Payload?: number; Datetime?: string };
+    Distance?: { OdometerUnits?: string; Odometer?: number; Datetime?: string };
+    EngineStatus?: { EngineNumber?: string; Running?: boolean; Datetime?: string };
+
+    FuelUsed?: { FuelUnits?: string; FuelConsumed?: number; Datetime?: string };
+    FuelUsedLast24?: { FuelUnits?: string; FuelConsumed?: number; Datetime?: string };
+    FuelRemaining?: { Percent?: number; Datetime?: string };
+
+    // If CAT adds extra keys, this keeps us future-proof.
+    [k: string]: unknown;
 };
 
-/** CAT ISO 15143 "fleet" page shape (simplified) */
 type CatFleetPage = {
     Links?: Array<{ Rel: string; Href: string }>;
-    Equipment?: any[];
+    Equipment?: CatMachine[];
     Version?: string;
     SnapshotTime?: string;
 };
 
-function tsToMs(ts?: string | number): number | undefined {
-    if (ts == null) return undefined;
-    if (typeof ts === "number") return ts > 10_000_000_000 ? ts : ts * 1000;
-    const v = Date.parse(ts);
-    return Number.isNaN(v) ? undefined : v;
+function asCatMachine(e: any): CatMachine | null {
+    if (!e || typeof e !== "object") return null;
+    const h = e?.EquipmentHeader;
+    // Require at least one identifier to avoid junk rows
+    if (!h?.SerialNumber && !h?.EquipmentID) return null;
+    return e as CatMachine;
 }
 
-function mapAssetToMachine(e: any): CatMachine | null {
-    const h = e?.EquipmentHeader ?? {};
-    const serial = h.SerialNumber ?? null;
-    const equipId = h.EquipmentID ?? null;
-    if (!serial && !equipId) return null;
-
-    const id = `CAT:${serial ?? equipId}`;
-    const model = h.Model ?? null;
-
-    const loc = e?.Location ?? {};
-    const lat = loc.Latitude ?? loc.latitude;
-    const lon = loc.Longitude ?? loc.longitude;
-    const geo = (lat != null && lon != null)
-        ? { latitude: Number(lat), longitude: Number(lon), time: tsToMs(loc.datetime) }
-        : undefined;
-
-    const m: CatMachine = {
-        id,
-        name: model ?? serial ?? equipId ?? null,
-        oemName: "CAT",
-        header: {
-            model,
-            equipmentId: equipId,
-            serialNumber: serial,
-        },
-        metrics: {
-            hours: e?.CumulativeOperatingHours?.Hour ?? null,
-            hoursAt: tsToMs(e?.CumulativeOperatingHours?.datetime),
-            idleHours: e?.CumulativeIdleHours?.Hour ?? null,
-
-            fuelUsed: e?.FuelUsed?.FuelConsumed ?? null,
-            fuelUsedAt: tsToMs(e?.FuelUsed?.datetime),
-            fuelUsedLast24: e?.FuelUsedLast24?.FuelConsumed ?? null,
-            fuelUsedLast24At: tsToMs(e?.FuelUsedLast24?.datetime),
-
-            odometerKm: e?.Distance?.Odometer ?? null,
-            odometerAt: tsToMs(e?.Distance?.datetime),
-
-            fuelRemainingPct: e?.FuelRemaining?.Percent ?? null,
-            defRemainingPct: e?.DEFRemaining?.Percent ?? null,
-
-            engineRunning: e?.EngineStatus?.Running ?? null,
-            engineAt: tsToMs(e?.EngineStatus?.datetime),
-
-            payloadKg: e?.CumulativePayloadTotals?.Payload ?? null,
-            payloadAt: tsToMs(e?.CumulativePayloadTotals?.datetime),
-
-            loadCount: e?.CumulativeLoadCount?.Count ?? null,
-            loadCountAt: tsToMs(e?.CumulativeLoadCount?.datetime),
-        },
-        geo,
-    };
-
-    return m;
-}
 
 function nextFromLinks(links?: Array<{ Rel: string; Href: string }>): string | null {
     if (!Array.isArray(links)) return null;
@@ -225,7 +178,7 @@ export async function fetchAllCatMachines(): Promise<CatMachine[]> {
 
             const items = resp.data?.Equipment ?? [];
             for (const raw of items) {
-                const m = mapAssetToMachine(raw);
+                const m = asCatMachine(raw);
                 if (m) out.push(m);
             }
 

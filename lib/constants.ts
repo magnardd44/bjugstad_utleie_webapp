@@ -9,3 +9,6 @@ export const IS_PROD = process.env.NODE_ENV === "production";
 
 // Whether to enable the Credentials provider for DEV (skips Vipps login).
 export const USE_CREDENTIALS_PROVIDER_FOR_DEV_ONLY: boolean = false;
+
+// Vipps OAuth scope to request additional user data.
+export const VIPPS_DATA_REQUESTS = "openid name email phoneNumber address"
