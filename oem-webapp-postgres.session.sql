@@ -1,4 +1,4 @@
 SELECT *
-FROM account
+FROM users
 ORDER BY id DESC
-LIMIT 5;
+LIMIT 15;

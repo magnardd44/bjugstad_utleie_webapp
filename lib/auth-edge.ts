@@ -37,6 +37,7 @@ const edgeAuthConfig: NextAuthConfig = {
   ],
   pages: {
     signIn: "/login",
+    newUser: "/onboarding", // redirect new users to onboarding
   },
   callbacks: {
     // NOTE: No DB work in Edge. The OAuthAccountNotLinked redirect

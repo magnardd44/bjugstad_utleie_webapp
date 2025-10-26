@@ -27,6 +27,12 @@ export async function middleware(req: Request) {
   // reflects whatever provider was used (Vipps in prod, Credentials in dev).
   const session = await auth();
 
+  if (session && !session.user?.acceptedTerms) {
+    if (!pathname.startsWith("/onboarding") && !pathname.startsWith("/api/auth")) {
+      return NextResponse.redirect(new URL("/onboarding", url.origin));
+    }
+  }
+
   // If user is already authenticated and opens /login manually,
   // send them to the intended callback (or /avtaler).
   if (session && pathname === "/login") {

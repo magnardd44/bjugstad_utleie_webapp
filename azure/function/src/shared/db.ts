@@ -88,7 +88,12 @@ export async function upsertMachines(rows: MachineRow[]): Promise<number> {
 
     const sql = `
     INSERT INTO machines (
-      id, name, oem_name, last_pos_reported_at, last_pos_latitude, last_pos_longitude
+      id,
+      name,
+      oem_name,
+      last_pos_reported_at,
+      last_pos_latitude,
+      last_pos_longitude
     )
     VALUES ${placeholders.join(", ")}
     ON CONFLICT (id) DO UPDATE

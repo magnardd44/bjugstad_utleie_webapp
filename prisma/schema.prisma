@@ -26,10 +26,10 @@ datasource db {
 
 model User {
   id                   String     @id @default(cuid())
+  phone                String?    @unique
   name                 String?
   email                String?    @unique
   emailVerified        DateTime?  @map("email_verified")
-  phone                String?
   address_street       String?
   address_postal_code  String?
   address_region       String?
@@ -39,7 +39,7 @@ model User {
   acceptedTermsAt      DateTime?  @map("accepted_terms_at")
   acceptedTermsVersion String?    @map("accepted_terms_version") // e.g. "v1"
 
-  // A user can have many accounts and sessions
+  // A user can have many accounts (Vipps, Google, etc.) and sessions
   accounts             Account[]
   sessions             Session[]
   createdAt            DateTime @default(now()) @map("created_at")
@@ -101,7 +101,7 @@ model Machine {
   name               String?
   oemName            String?  @map("oem_name")
   firstSeen          DateTime @default(now()) @map("first_seen")
-  lastUpdated        DateTime @updatedAt @map("last_updated")
+  lastUpdated        DateTime  @default(now()) @updatedAt @map("last_updated")
   lastPosReportedAt  DateTime? @map("last_pos_reported_at")
   lastPosLatitude    Float?    @map("last_pos_latitude")
   lastPosLongitude   Float?    @map("last_pos_longitude")

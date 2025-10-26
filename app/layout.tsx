@@ -25,12 +25,15 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   const session = await auth();
   const isAuthed = !!session; // keep your dev-bypass here if needed
 
+  const accepted = session?.user?.acceptedTerms === true;
+  const showShell = isAuthed && accepted;
+
   return (
     <html lang="no">
       <body className={`${geistSans.variable} ${geistMono.variable} antialiased`}>
         {/* Session provider available app-wide */}
         <AuthProvider>
-          {isAuthed ? (
+          {showShell ? (
             <>
               <SideNav />
               <Suspense fallback={

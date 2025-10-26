@@ -20,7 +20,6 @@ import Credentials from "next-auth/providers/credentials";
 import { IS_DEV, VIPPS_DATA_REQUESTS } from "./constants";
 import { USE_CREDENTIALS_PROVIDER_FOR_DEV_ONLY } from "./constants";
 
-
 export const authConfig: NextAuthConfig = {
   // Persist users/accounts (e.g., Vipps <-> local user link) in your database
   adapter: PrismaAdapter(prisma),
@@ -41,14 +40,15 @@ export const authConfig: NextAuthConfig = {
       clientSecret: process.env.AUTH_VIPPS_SECRET!,
       issuer: process.env.AUTH_VIPPS_ISSUER, // apitest in dev, api in prod
 
-      // Ask Vipps for additional user data (name, email, phone, address)
+      // Ask Vipps for additional user data (name, email, phone, address).
+      // IMPORTANT: We include "phoneNumber" in scope so we get phone_number from Vipps.
       authorization: {
         params: {
-          // TODO. Make sure we store the data we request in the DB. Also, find a proper way for how to re-update user data later (at every login? after x days?)
+          // TODO. Make sure we store the data we request in the DB.
+          //       Also decide how to refresh user data over time (at every login? after X days?)
           scope: VIPPS_DATA_REQUESTS,
         },
       },
-
     }),
 
     // === Credentials (added in DEV only if flagged) ===
@@ -76,75 +76,242 @@ export const authConfig: NextAuthConfig = {
   // Your middleware also redirects unauthenticated users here.
   pages: {
     signIn: "/login",
+    newUser: "/onboarding", // redirect new users to onboarding
   },
 
   callbacks: {
     /**
-    * We intercept the “same email, different provider not yet linked” case
-    * and redirect back to /login with `?error=OAuthAccountNotLinked&email=...`.
-    */
+     * Custom signIn gate.
+     *
+     * GOALS:
+     *
+     * 1. PHONE NUMBER is our primary identity key.
+     *    - profile.phone_number is what we trust from Vipps.
+     *    - users.phone in our DB must be unique.
+     *
+     *    If that phone already exists in the DB:
+     *      -> This is (most likely) the same human coming back.
+     *      -> We allow login IFF the Vipps account is already linked to that user.
+     *         If it's not linked, we send them back to /login with
+     *         error=OAuthAccountNotLinked (your existing UX).
+     *
+     * 2. EMAIL is optional.
+     *    - Can be null.
+     *    - But if Vipps gives us an email, that email cannot already be owned
+     *      by *some other* phone in our system.
+     *      (We don't want two totally different phone numbers reusing one email.)
+     *
+     * 3. BRAND NEW USER FLOW:
+     *    - If phone_number is not in DB yet,
+     *      AND the email (if present) is not already linked to someone else,
+     *      then we let NextAuth create/link the new user and we immediately
+     *      redirect them to /onboarding instead of dropping them straight into the app.
+     *
+     * 4. We keep your "OAuthAccountNotLinked" UX:
+     *    - If the login creds don't line up with the stored link between
+     *      this Vipps account and the existing user, we bounce with that error.
+     */
     async signIn({ user, account, profile }) {
       // Debug info in dev
       if (process.env.NODE_ENV !== "production") {
         console.log("User data available:");
-        console.log("[auth:signIn] user =", JSON.stringify(user, null, 2)); // DB object
-        console.log("[auth:signIn] account =", JSON.stringify(account, null, 2)); // Data returned by Vipps (or other provider)
-        console.log("[auth:signIn] profile =", JSON.stringify(profile, null, 2)); // Vipps API
+        console.log("[auth:signIn] user =", JSON.stringify(user, null, 2)); // DB-ish user object (maybe newly created by adapter)
+        console.log("[auth:signIn] account =", JSON.stringify(account, null, 2)); // Data returned by Vipps account link
+        console.log("[auth:signIn] profile =", JSON.stringify(profile, null, 2)); // Raw Vipps claims (phone_number, email, etc.)
       }
 
+      const origin = process.env.NEXTAUTH_URL!;
+
       try {
-        const provider = account?.provider;
-        const providerAccountId = account?.providerAccountId;
+        const provider = account?.provider; // "vipps"
+        const providerAccountId = account?.providerAccountId; // maps to profile.sub
+        // NOTE: in your logs: providerAccountId === "228fcb4f-0c7d-40f6-b00b-89b6612ed5f0"
 
+        // Canonical fields from Vipps (based on your logs):
+        // - profile.email
+        // - profile.phone_number (string like "4745938863")
+        // Fallback to user.* if needed, but profile is the source of truth here.
         const emailAddr =
-          user?.email ?? (typeof (profile as any)?.email === "string" ? (profile as any).email : undefined);
+          (typeof (profile as any)?.email === "string" && (profile as any).email) ||
+          (typeof user?.email === "string" && user.email) ||
+          undefined;
 
-        if (!provider || !providerAccountId || !emailAddr) {
-          return true; // let NextAuth handle the rest
+        const emailVerified =
+          typeof (profile as any)?.email_verified === 'boolean' ? (profile as any).email_verified : undefined;
+
+        const phoneNumberRaw =
+          (typeof (profile as any)?.phone_number === "string" &&
+            (profile as any).phone_number) ||
+          (typeof (user as any)?.phone === "string" && (user as any).phone) ||
+          undefined;
+        const phoneNumberVipps = (profile as any)?.phone_number as string | undefined;
+
+        const phoneNumber = normalizePhone(phoneNumberVipps);
+
+        const addressData = mapAddress((profile as any)?.address);
+
+        console.log("phone number:", phoneNumberVipps, phoneNumber);
+        console.log("email address:", emailAddr);
+        console.log("email verified:", emailVerified);
+        console.log("address data:", addressData);
+
+        // Sanity guard: if we *somehow* didn't get a provider or providerAccountId,
+        // just let NextAuth continue. (Avoids hard-crash in edge cases.)
+        if (!provider || !providerAccountId) {
+          console.log("provider or providerAccountId MISSING!");
+          return true;
         }
 
-        // Is there already a user with this email?
-        const existingUser = await prisma.user.findUnique({
-          where: { email: emailAddr },
-          select: { id: true },
+        // We rely heavily on phone_number. If Vipps didn't send phone_number for some reason,
+        // we can't apply our phone-based security logic. Let NextAuth proceed (graceful degrade).
+        if (!phoneNumber) {
+          console.log("phone number for this Vipps user is MISSING!");
+          return true;
+        }
+
+        // Look up existing user by phone (primary identity).
+        const userByPhone = await prisma.user.findUnique({
+          where: { phone: phoneNumber },
+          select: { id: true, phone: true, email: true },
         });
 
-        if (!existingUser) return true;
+        // Look up user by email (for collision checks), but ONLY if we actually got an email.
+        // Email is allowed to be null/undefined.
+        const userByEmail = emailAddr
+          ? await prisma.user.findUnique({
+            where: { email: emailAddr },
+            select: { id: true, phone: true, email: true },
+          })
+          : null;
 
-        // Is that user already linked to this provider?
-        const linked = await prisma.account.findFirst({
-          where: { userId: existingUser.id, provider },
-          select: { id: true },
-        });
+        // === CASE 1: Returning user (phone already in DB) ===========================
+        //
+        // If phoneNumber already exists in our DB, treat this as "same human".
+        // We now must verify that THIS Vipps account is linked to THAT user.
+        if (userByPhone) {
+          console.log("userByPhone found:", userByPhone);
 
-        if (!linked) {
-          const origin = process.env.NEXTAUTH_URL!;
+          // Update user record with any new data from Vipps (if we have it).
+          const updates: any = {};
+          if (!userByPhone.email && emailAddr) updates.email = emailAddr;
+          //if (fullName) updates.name = fullName;
+          if (phoneNumber && userByPhone.phone !== phoneNumber) updates.phone = phoneNumber; // optional strictness
+          if (addressData.address_street) updates.address_street = addressData.address_street;
+          if (addressData.address_postal_code) updates.address_postal_code = addressData.address_postal_code;
+          if (addressData.address_region) updates.address_region = addressData.address_region;
+          //if (emailVerified) updates.emailVerified = new Date();
+
+          if (Object.keys(updates).length > 0 && user?.id) {
+            await prisma.user.update({ where: { id: user.id }, data: updates });
+          }
+
+
+          // Is that DB user already linked to this same Vipps account?
+          // We check by userId + provider + providerAccountId.
+          const linked = await prisma.account.findFirst({
+            where: {
+              userId: userByPhone.id,
+              provider,
+              providerAccountId,
+            },
+            select: { id: true },
+          });
+
+          if (!linked) {
+            console.log("userByPhone is linked to a different Vipps account!");
+            // The phone matches an existing user, but this Vipps account isn't
+            // linked to that user. We do NOT silently merge.
+            // -> redirect back to /login with an OAuthAccountNotLinked-style error.
+            const url = new URL("/login", origin);
+            url.searchParams.set("error", "OAuthAccountNotLinked");
+            if (emailAddr) {
+              // Show the email if we have it (you already display this on the login page).
+              url.searchParams.set("email", emailAddr);
+            }
+            return url.toString();
+          }
+
+          // OK: same phone, same linked Vipps account => legit returning user.
+          // -> Allow normal sign-in flow (they'll land wherever NextAuth would normally send them).
+          return true;
+        }
+
+        // === CASE 2: phone is NEW, but email belongs to someone else = BLOCK ========
+        //
+        // phoneNumber is not in DB (so this looks like a new device/user),
+        // BUT Vipps email matches an existing user entry with a *different* phone.
+        //
+        // We disallow that because we don't want 2 different phones / humans
+        // to share 1 email in our system.
+        if (!userByPhone && userByEmail) {
+          console.log("userByEmail found with different phone:", userByEmail);
+          // -> redirect back to /login with an OAuthAccountNotLinked-style error.
           const url = new URL("/login", origin);
           url.searchParams.set("error", "OAuthAccountNotLinked");
-          url.searchParams.set("email", emailAddr); // <-- shown by the login page
-          return url.toString(); // cause a redirect instead of throwing the built-in error
+          if (emailAddr) {
+            url.searchParams.set("email", emailAddr);
+          }
+          return url.toString();
         }
 
-        return true;
-      } catch {
+        // === CASE 3: Truly brand new user ==========================================
+        //
+        // - phoneNumber not in DB
+        // - email is either unused OR not provided
+        //
+        // Let NextAuth/PrismaAdapter create/link this user.
+        // BUT we override the "where do you go next" to force onboarding.
+        if (!userByPhone && !userByEmail) {
+          if (user?.id) {
+            console.log(user.id);
+
+            /*
+            await prisma.user.update({
+              where: { id: user.id },
+              data: {
+                // Set what we know from Vipps
+                phone: phoneNumber ?? undefined,
+                email: emailAddr ?? undefined,
+                //name: fullName ?? undefined,
+                ...addressData,
+                //...(emailVerified ? { emailVerified: new Date() } : {}),
+              },
+            });
+            */
+          }
+          return true; // and rely on pages.newUser for /onboarding
+        }
+
+        // We never fall through here.
+
+      } catch (err) {
         // On any unexpected error, fall back to the normal flow.
+        // We don't want a bug here to hard-block login in prod.
+        if (IS_DEV) {
+          console.error("[auth:signIn] unexpected error:", err);
+        }
         return true;
       }
     },
 
     // Runs whenever a JWT is created/updated (e.g., after Vipps callback).
     // Put extra fields you care about onto the token.
-    async jwt({ token, user }) {
+    async jwt({ token, user, trigger, session }) {
       if (user) {
         token.uid = user.id;
         // @ts-expect-error - custom column on your Prisma User model
         token.acceptedTerms = user.acceptedTerms ?? false;
 
-        // In dev, pretend terms are accepted so middleware doesn't bounce you (only if using Credentials provider).
+        // In dev, pretend terms are accepted so middleware doesn't bounce you
+        // (only if using Credentials provider).
         if (IS_DEV && USE_CREDENTIALS_PROVIDER_FOR_DEV_ONLY) {
           token.acceptedTerms = true;
         }
-
+      }
+      if (trigger === "update" && session) {
+        if (typeof session.acceptedTerms === "boolean") {
+          token.acceptedTerms = session.acceptedTerms;
+        }
       }
       return token;
     },
@@ -166,3 +333,30 @@ export const authConfig: NextAuthConfig = {
 // - `auth`: server helper to read the current session (used by middleware, route handlers, RSC).
 // - `signIn`/`signOut`: server-side helpers if you need them in actions/handlers.
 export const { handlers, auth, signIn, signOut } = NextAuth(authConfig);
+
+
+// Helpers
+function normalizePhone(input?: string | null) {
+  if (!input) return undefined;
+  const s = input.trim();
+  if (s.startsWith("+")) return s;
+
+  if (/^\d+$/.test(s)) {
+    // If it already starts with country code like "47..."
+    return "+" + s;
+  }
+
+  return undefined;
+}
+
+function mapAddress(addr: any) {
+  if (!addr || typeof addr !== 'object') return {};
+  const street = typeof addr.street_address === 'string' ? addr.street_address : undefined;
+  const postal = typeof addr.postal_code === 'string' ? addr.postal_code : undefined;
+  const region = typeof addr.region === 'string' ? addr.region : undefined;
+  return {
+    address_street: street,
+    address_postal_code: postal,
+    address_region: region,
+  };
+}

@@ -21,17 +21,17 @@ export const getMachinesFC = cache(async (): Promise<MachinesFC> => {
 
     try {
         const { rows } = await query(`
-      SELECT
-        id,
-        name,
-        last_pos_reported_at,
-        last_pos_latitude  AS lat,
-        last_pos_longitude AS lng
-      FROM machines
-      WHERE last_pos_latitude IS NOT NULL
-        AND last_pos_longitude IS NOT NULL
-      ORDER BY name;
-    `);
+            SELECT
+                id,
+                name,
+                last_pos_reported_at,
+                last_pos_latitude  AS lat,
+                last_pos_longitude AS lng
+            FROM machines
+            WHERE last_pos_latitude IS NOT NULL
+                AND last_pos_longitude IS NOT NULL
+            ORDER BY name;
+            `);
 
         if (IS_DEV) {
             console.log(`[machines] DB returned ${rows.length} rows`);
@@ -62,7 +62,8 @@ export const getMachinesFC = cache(async (): Promise<MachinesFC> => {
 
         const fc: MachinesFC = { type: "FeatureCollection", features };
 
-        if (IS_DEV) {
+        // Print full FeatureCollection object
+        if (false && IS_DEV) {
             console.log("[machines] FeatureCollection to be provided to client:");
             console.dir(fc, { depth: null });
         }
