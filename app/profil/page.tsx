@@ -47,7 +47,7 @@ export default function ProfilPage() {
         <ProfileRow icon={<UserIcon className="h-5 w-5 text-slate-500" />} label="Navn" value={user.name ?? "N/A"} />
         <ProfileRow icon={<PhoneIcon className="h-5 w-5 text-slate-500" />} label="Telefon" value={user.phone ?? "N/A"} />
         <ProfileRow icon={<EnvelopeIcon className="h-5 w-5 text-slate-500" />} label="E-post" value={user.email ?? "N/A"} />
-        <ProfileRow icon={<HomeIcon className="h-5 w-5 text-slate-500" />} label="Adresse" value={user.address ?? "N/A"} />
+        <ProfileRow icon={<HomeIcon className="h-5 w-5 text-slate-500" />} label="Adresse" value={user.address_street ?? "N/A"} />
         <ProfileRow icon={<BuildingOffice2Icon className="h-5 w-5 text-slate-500" />} label="Selskap" value={user.company ?? "N/A"} />
         <ProfileRow icon={<BriefcaseIcon className="h-5 w-5 text-slate-500" />} label="Rolle" value={user.role ?? "N/A"} />
 

@@ -9,6 +9,8 @@ export async function POST(req: Request) {
 
   const { company, role, phone, acceptedTermsVersion } = await req.json();
 
+  console.log("Onboarding API: updating user", session.user.id, { company, role, phone, acceptedTermsVersion });
+
   await prisma.user.update({
     where: { id: session.user.id },
     data: {

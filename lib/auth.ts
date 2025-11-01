@@ -263,7 +263,7 @@ export const authConfig: NextAuthConfig = {
         // BUT we override the "where do you go next" to force onboarding.
         if (!userByPhone && !userByEmail) {
           if (user?.id) {
-            console.log(user.id);
+            console.log("!userByPhone && !userByEmail", user.id, phoneNumber, emailAddr);
 
             /*
             await prisma.user.update({
@@ -325,7 +325,29 @@ export const authConfig: NextAuthConfig = {
       return session;
     },
   },
-  // Other defaults (cookies, CSRF) can be tuned here if needed.
+
+  events: {
+    // Callback after a successful sign-in
+    async signIn({ user, account, profile }: { user: any; account?: any; profile?: any }) {
+      console.log("Event: signIn for user", user.id);
+      if (account?.provider !== "vipps") return;
+      console.log("Post-signIn event: syncing additional Vipps profile data for user", user.id)
+
+      const phone = normalizePhone((profile as any)?.phone_number);
+      const addressData = mapAddress((profile as any)?.address);
+      const emailAddr = typeof (profile as any)?.email === "string" ? (profile as any).email : undefined;
+
+      const updates: any = {};
+
+      if (phone) updates.phone = phone;
+      if (emailAddr && !user.email) updates.email = emailAddr;
+      Object.assign(updates, addressData);
+
+      if (Object.keys(updates).length) {
+        await prisma.user.update({ where: { id: user.id }, data: updates });
+      }
+    },
+  },
 };
 
 // Export the NextAuth-bound pieces used across the app:

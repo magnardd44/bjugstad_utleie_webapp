@@ -28,7 +28,7 @@ export async function middleware(req: Request) {
   const session = await auth();
 
   if (session && !session.user?.acceptedTerms) {
-    if (!pathname.startsWith("/onboarding") && !pathname.startsWith("/api/auth")) {
+    if (!pathname.startsWith("/onboarding") && !pathname.startsWith("/api/auth") && !pathname.startsWith("/api/onboarding")) {
       return NextResponse.redirect(new URL("/onboarding", url.origin));
     }
   }

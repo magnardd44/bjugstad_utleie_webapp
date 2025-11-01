@@ -35,6 +35,7 @@ export default function OnboardingPage() {
         if (res.ok) {
             await update({ acceptedTerms: true });
             router.replace("/avtaler");
+            //router.refresh();
         } else {
             setError("Kunne ikke lagre opplysninger.");
             setSubmitting(false);
