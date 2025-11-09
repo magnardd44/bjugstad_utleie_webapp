@@ -9,10 +9,11 @@ import { SunIcon, MoonIcon } from "@heroicons/react/24/solid";
 import { Flag, FlagOff, Route, RouteOff, Text as TextIcon, ListX } from "lucide-react";
 import { useMachines } from "@/components/MachinesContext";
 import type { MachineFeature, MachinesFC } from "@/types/machines";
+import Image from "next/image";
 
 type Props = { features?: MachinesFC };
 
-const MT_KEY = process.env.NEXT_PUBLIC_MAPTILER_KEY;
+const MAPTILER_KEY = process.env.NEXT_PUBLIC_MAPTILER_KEY;
 
 // Palette
 const c = {
@@ -24,12 +25,48 @@ const c = {
     cluster3: "#486581",
 };
 
+const OEM_LOGOS: Record<string, string> = {
+    hydrema: "/oem-logos/hydrema_logo.svg",
+    cat: "/oem-logos/CAT_logo.svg",
+    default: "/oem-logos/no_image_default.svg",
+};
+
+const OEM_COLORS: Record<string, string> = {
+    hydrema: "#000000", // black
+    cat: "#F59E0B",     // orange/amber
+    default: c.blue,    // fallback
+};
+
+function getMachineLogo(oem_name: string): string {
+    const raw = oem_name?.trim().toLowerCase();
+    console.log("OEM name:", raw);
+    return (raw && OEM_LOGOS[raw]) ?? OEM_LOGOS.default;
+}
+
+function buildOemColorExpression(): any[] {
+    // ["match", ["downcase", ["coalesce", ["get","oem_name"], ""]], "hydrema","#000", "cat","#F59E0B", fallback]
+    const entries: any[] = [];
+    for (const [k, v] of Object.entries(OEM_COLORS)) {
+        if (k === "default") continue;
+        entries.push(k, v);
+    }
+    return ["match", ["downcase", ["coalesce", ["get", "oem_name"], ""]], ...entries, OEM_COLORS.default];
+}
+
+const OEM_COLOR_EXPRESSION = ([
+    "match",
+    ["downcase", ["coalesce", ["to-string", ["get", "oem_name"]], ""]],
+    "hydrema", OEM_COLORS.hydrema,
+    "cat", OEM_COLORS.cat,
+    OEM_COLORS.default,
+] as unknown) as maplibregl.ExpressionSpecification;
+
 export default function MapView({ features }: Props) {
     const containerRef = useRef<HTMLDivElement | null>(null);
     const mapRef = useRef<Map | null>(null);
     const loadedRef = useRef(false);
     const appliedThemeRef = useRef<"light" | "dark">("light");
-    const styleRestorePendingRef = useRef(false); // NEW: debounce guard during style swaps
+    const styleRestorePendingRef = useRef(false);
 
     // UI theme
     const [theme, setTheme] = useState<"light" | "dark">("light");
@@ -157,12 +194,15 @@ export default function MapView({ features }: Props) {
                 source: "machines",
                 filter: ["!", ["has", "point_count"]],
                 paint: {
-                    "circle-color": c.blue,
+                    "circle-color": OEM_COLOR_EXPRESSION,
                     "circle-radius": 6,
                     "circle-stroke-width": 1.5,
                     "circle-stroke-color": c.grayStroke,
                 },
             });
+        } else {
+            // Ensure color expression stays in sync if layer existed
+            map.setPaintProperty("unclustered-point", "circle-color", OEM_COLOR_EXPRESSION); // NEW
         }
 
         if (!map.getLayer("unclustered-label")) {
@@ -285,8 +325,8 @@ export default function MapView({ features }: Props) {
     useEffect(() => {
         if (!containerRef.current || mapRef.current) return;
 
-        const styleUrl = MT_KEY
-            ? `https://api.maptiler.com/maps/streets-v2/style.json?key=${MT_KEY}`
+        const styleUrl = MAPTILER_KEY
+            ? `https://api.maptiler.com/maps/streets-v2/style.json?key=${MAPTILER_KEY}`
             : "https://demotiles.maplibre.org/style.json";
 
         const map = new maplibregl.Map({
@@ -352,13 +392,13 @@ export default function MapView({ features }: Props) {
     // ---------- theme swap (no camera jump, no blink) ----------
     useEffect(() => {
         const map = mapRef.current;
-        if (!map || !loadedRef.current || !MT_KEY) return;
+        if (!map || !loadedRef.current || !MAPTILER_KEY) return;
         if (appliedThemeRef.current === theme) return;
 
         const url =
             theme === "dark"
-                ? `https://api.maptiler.com/maps/streets-v2-dark/style.json?key=${MT_KEY}`
-                : `https://api.maptiler.com/maps/streets-v2/style.json?key=${MT_KEY}`;
+                ? `https://api.maptiler.com/maps/streets-v2-dark/style.json?key=${MAPTILER_KEY}`
+                : `https://api.maptiler.com/maps/streets-v2/style.json?key=${MAPTILER_KEY}`;
 
         appliedThemeRef.current = theme;
         map.setStyle(url, { diff: true });
@@ -537,7 +577,7 @@ export default function MapView({ features }: Props) {
                     <table className="min-w-full table-fixed">
                         <thead className="sticky top-0 bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
                             <tr>
-                                <th className="w-16 px-3 py-2">Bilde</th>
+                                <th className="w-16 px-3 py-2">OEM</th>
                                 <th className="w-28 px-3 py-2">ID</th>
                                 <th className="px-3 py-2">Navn</th>
                                 <th className="w-36 px-3 py-2">Long</th>
@@ -550,6 +590,8 @@ export default function MapView({ features }: Props) {
                                 const [lng, lat] = (f.geometry as Point).coordinates as [number, number];
                                 const id = f.properties?.id;
                                 const name = f.properties?.name ?? "Maskin";
+                                const oem_name = f.properties?.oem_name ?? "N/A";
+                                console.log("Machine OEM name in table:", oem_name);
                                 const last = f.properties?.last_pos_reported_at ?? null;
                                 const isSelected = String(selectedId) === String(id);
 
@@ -567,8 +609,15 @@ export default function MapView({ features }: Props) {
                                     >
                                         <td className="px-3 py-2">
                                             {/* Placeholder image */}
-                                            <div className="flex h-10 w-14 items-center justify-center rounded-md bg-slate-200/80 text-xs text-slate-500 ring-1 ring-inset ring-slate-300">
-                                                IMG
+                                            <div className="flex h-10 w-14 items-center justify-center">
+                                                <Image
+                                                    src={getMachineLogo(oem_name)}
+                                                    alt={`${f.properties?.oem_name ?? "Maskin"} logo`}
+                                                    width={56}
+                                                    height={40}
+                                                    className="max-h-full max-w-full object-contain"
+                                                    priority={false}
+                                                />
                                             </div>
                                         </td>
                                         <td className="truncate px-3 py-2 text-slate-700">{String(id ?? "-")}</td>
@@ -653,6 +702,9 @@ function SegmentedIconToggle({
     );
 }
 
+
+// ---------- HELPER FUNCTIONS ----------
+
 function fitToFeatures(map: Map, fc: MachinesFC, opts?: { onlyIfChanged?: boolean }) {
     const feats = fc.features ?? [];
     if (feats.length === 0) return;
@@ -696,7 +748,7 @@ function applyLabelContrast(map: Map, theme: "light" | "dark") {
 
     if (map.getLayer("unclustered-point")) {
         map.setPaintProperty("unclustered-point", "circle-stroke-color", isDark ? "#FFFFFF" : c.grayStroke);
-        map.setPaintProperty("unclustered-point", "circle-color", isDark ? c.blue : c.blue);
+        map.setPaintProperty("unclustered-point", "circle-color", isDark ? OEM_COLOR_EXPRESSION : OEM_COLOR_EXPRESSION);
     }
 }
 

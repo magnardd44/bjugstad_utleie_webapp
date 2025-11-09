@@ -12,6 +12,7 @@ function normalizeMachinesFC(input: any): MachinesFC {
         const props: MachineProps = {
             id: p.id,
             name: p.name ?? "",
+            oem_name: p.oem_name ?? "",
             last_pos_reported_at:
                 p.last_pos_reported_at != null ? String(p.last_pos_reported_at) : null,
         };

@@ -24,6 +24,7 @@ export const getMachinesFC = cache(async (): Promise<MachinesFC> => {
             SELECT
                 id,
                 name,
+                oem_name,
                 last_pos_reported_at,
                 last_pos_latitude  AS lat,
                 last_pos_longitude AS lng
@@ -54,7 +55,8 @@ export const getMachinesFC = cache(async (): Promise<MachinesFC> => {
                         typeof m.id === "number" || typeof m.id === "string"
                             ? m.id
                             : String(m.id),
-                    name: String(m.name ?? ""),
+                    name: String(m.name ?? "N/A"),
+                    oem_name: String(m.oem_name ?? "N/A"),
                     last_pos_reported_at: reportedAt,
                 },
             };
