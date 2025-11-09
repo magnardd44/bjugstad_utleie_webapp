@@ -1,4 +1,5 @@
 // src/services/hydrema.ts
+// Documentation: https://docs.proemion.com/api/
 // Purpose: Service to interact with the Hydrema API to fetch machine data.
 // Uses client credentials flow to get an access token and caches it.
 import axios, {

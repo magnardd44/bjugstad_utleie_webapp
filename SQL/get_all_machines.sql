@@ -1,0 +1,4 @@
+SELECT *
+FROM machines
+ORDER BY id DESC
+LIMIT 100;

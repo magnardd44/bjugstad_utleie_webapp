@@ -17,7 +17,7 @@ import { prisma } from "./prisma";
 import Vipps from "next-auth/providers/vipps";
 import type { NextAuthConfig } from "next-auth";
 import Credentials from "next-auth/providers/credentials";
-import { IS_DEV, VIPPS_DATA_REQUESTS } from "./constants";
+import { IS_DEV, VIPPS_DATA_REQUESTS, SESSION_USER_FIELDS } from "./constants";
 import { USE_CREDENTIALS_PROVIDER_FOR_DEV_ONLY } from "./constants";
 
 export const authConfig: NextAuthConfig = {
@@ -301,6 +301,7 @@ export const authConfig: NextAuthConfig = {
         token.uid = user.id;
         // @ts-expect-error - custom column on your Prisma User model
         token.acceptedTerms = user.acceptedTerms ?? false;
+        copyUserFields(token as any, user as any);
 
         // In dev, pretend terms are accepted so middleware doesn't bounce you
         // (only if using Credentials provider).
@@ -308,8 +309,14 @@ export const authConfig: NextAuthConfig = {
           token.acceptedTerms = true;
         }
       }
-      if (trigger === "update" && session) {
-        if (typeof session.acceptedTerms === "boolean") {
+      if (trigger === "update") {
+        if (session?.user) {
+          copyUserFields(token as any, session.user as any);
+        } else if (token.uid) {
+          const latest = await prisma.user.findUnique({ where: { id: token.uid as string } });
+          copyUserFields(token as any, latest as any);
+        }
+        if (typeof session?.acceptedTerms === "boolean") {
           token.acceptedTerms = session.acceptedTerms;
         }
       }
@@ -321,6 +328,7 @@ export const authConfig: NextAuthConfig = {
       if (session.user) {
         session.user.id = token.uid as string;
         session.user.acceptedTerms = (token.acceptedTerms as boolean) ?? false;
+        copyUserFields(session.user as any, token as any);
       }
       return session;
     },
@@ -357,7 +365,10 @@ export const authConfig: NextAuthConfig = {
 export const { handlers, auth, signIn, signOut } = NextAuth(authConfig);
 
 
-// Helpers
+// ========= HHELPER FUNCTIONS ==========
+
+// Normalize phone number from Vipps to "+<number>" format.
+// If input is missing or invalid, returns undefined.
 function normalizePhone(input?: string | null) {
   if (!input) return undefined;
   const s = input.trim();
@@ -371,6 +382,7 @@ function normalizePhone(input?: string | null) {
   return undefined;
 }
 
+
 function mapAddress(addr: any) {
   if (!addr || typeof addr !== 'object') return {};
   const street = typeof addr.street_address === 'string' ? addr.street_address : undefined;
@@ -381,4 +393,19 @@ function mapAddress(addr: any) {
     address_postal_code: postal,
     address_region: region,
   };
+}
+
+// Type representing a single field in SESSION_USER_FIELDS
+type SessionUserField = (typeof SESSION_USER_FIELDS)[number];
+
+// copyUserFields pushes the whitelisted profile columns from one object into another
+// so the JWT/session always mirrors the latest Prisma user record without re-specifying
+// each field in every callback.
+function copyUserFields(target: Record<string, unknown>, source: Record<string, unknown> | null | undefined) {
+  if (!source) return;
+  for (const key of SESSION_USER_FIELDS) {
+    if (source[key] !== undefined) {
+      target[key] = source[key] instanceof Date ? source[key].toISOString() : source[key];
+    }
+  }
 }

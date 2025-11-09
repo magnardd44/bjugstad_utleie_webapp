@@ -38,18 +38,25 @@ export default function ProfilPage() {
     })
     : "N/A";
 
+  const formattedPhone = formatPhone(user.phone);
+  const formattedAddress = formatAddress({
+    street: user.address_street,
+    postalCode: user.address_postal_code,
+    region: user.address_region,
+  });
+
   return (
     <main className="p-8">
       <h1 className="text-3xl font-semibold mb-6">Min profil</h1>
 
       <div className="max-w-xl rounded-xl bg-white shadow p-6 space-y-4">
-        <ProfileRow icon={<CalendarIcon className="h-5 w-5 text-slate-500" />} label="Bruker opprettet" value={createdLabel ?? "N/A"} />
         <ProfileRow icon={<UserIcon className="h-5 w-5 text-slate-500" />} label="Navn" value={user.name ?? "N/A"} />
-        <ProfileRow icon={<PhoneIcon className="h-5 w-5 text-slate-500" />} label="Telefon" value={user.phone ?? "N/A"} />
+        <ProfileRow icon={<PhoneIcon className="h-5 w-5 text-slate-500" />} label="Telefon" value={formattedPhone ?? "N/A"} />
         <ProfileRow icon={<EnvelopeIcon className="h-5 w-5 text-slate-500" />} label="E-post" value={user.email ?? "N/A"} />
-        <ProfileRow icon={<HomeIcon className="h-5 w-5 text-slate-500" />} label="Adresse" value={user.address_street ?? "N/A"} />
+        <ProfileRow icon={<HomeIcon className="h-5 w-5 text-slate-500" />} label="Adresse" value={formattedAddress ?? "N/A"} />
         <ProfileRow icon={<BuildingOffice2Icon className="h-5 w-5 text-slate-500" />} label="Selskap" value={user.company ?? "N/A"} />
         <ProfileRow icon={<BriefcaseIcon className="h-5 w-5 text-slate-500" />} label="Rolle" value={user.role ?? "N/A"} />
+        <ProfileRow icon={<CalendarIcon className="h-5 w-5 text-slate-500" />} label="Bruker opprettet" value={createdLabel ?? "N/A"} />
 
         <div className="flex justify-between items-center pt-4 border-t">
           <button
@@ -89,4 +96,35 @@ function ProfileRow({
       <span className="text-slate-900">{value}</span>
     </div>
   );
+}
+
+function formatPhone(raw?: string | null) {
+  if (!raw) return "N/A";
+  const compact = raw.replace(/\s+/g, "");
+  if (!compact.startsWith("+") || compact.length <= 3) {
+    return raw;
+  }
+  const country = compact.slice(0, 3); // e.g. +47
+  const rest = compact.slice(3);
+  const groups = rest.match(/.{1,2}/g);
+  const spaced = groups ? groups.join(" ") : rest;
+  return `${country} ${spaced}`.trim();
+}
+
+function formatAddress({
+  street,
+  postalCode,
+  region,
+}: {
+  street?: string | null;
+  postalCode?: string | null;
+  region?: string | null;
+}) {
+  const parts: string[] = [];
+  if (street) parts.push(street);
+
+  const postalRegion = [postalCode, region].filter(Boolean).join(" ");
+  if (postalRegion) parts.push(postalRegion);
+
+  return parts.length ? parts.join(", ") : "N/A";
 }

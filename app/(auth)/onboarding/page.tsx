@@ -33,7 +33,11 @@ export default function OnboardingPage() {
             body: JSON.stringify({ company, acceptedTermsVersion: "v1" }),
         });
         if (res.ok) {
-            await update({ acceptedTerms: true });
+            await update({
+                acceptedTerms: true,
+                company
+                // include any other fields that were collected in the form/API
+            });
             router.replace("/avtaler");
             //router.refresh();
         } else {

@@ -1,5 +1,5 @@
 // azure/function/src/services/cat.ts
-// Source: https://digital.cat.com/apis/api-list/prod/iso15143-aemp-20-0#/Snapshot/getFleetSnapshot
+// Documentation: https://digital.cat.com/apis/api-list/prod/iso15143-aemp-20-0#/Snapshot/getFleetSnapshot
 import axios, {
     AxiosInstance,
     AxiosHeaders,
