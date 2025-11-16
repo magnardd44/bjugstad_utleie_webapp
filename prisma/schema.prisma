@@ -1,18 +1,8 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
-// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
-// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
-
 generator client {
   provider      = "prisma-client-js"
   binaryTargets = ["native", "debian-openssl-3.0.x"]
 }
 
-// Generate a second Prisma Client for the Azure Functions project so it
-// lands under `azure/function/node_modules/@prisma/client`.
-// This avoids the client being generated only at the repo root when
-// running `prisma generate` against this shared schema.
 generator client_functions {
   provider      = "prisma-client-js"
   output        = "../azure/function/node_modules/.prisma/client"
@@ -25,39 +15,33 @@ datasource db {
 }
 
 model User {
-  id                   String     @id @default(cuid())
-  phone                String?    @unique
+  id                   String    @id @default(cuid())
+  phone                String?   @unique
   name                 String?
-  email                String?    @unique
-  emailVerified        DateTime?  @map("email_verified")
+  email                String?   @unique
+  emailVerified        DateTime? @map("email_verified")
   address_street       String?
   address_postal_code  String?
   address_region       String?
   company              String?
   role                 String?
-  acceptedTerms        Boolean    @default(false) @map("accepted_terms")
-  acceptedTermsAt      DateTime?  @map("accepted_terms_at")
-  acceptedTermsVersion String?    @map("accepted_terms_version") // e.g. "v1"
-
-  // A user can have many accounts (Vipps, Google, etc.) and sessions
+  acceptedTerms        Boolean   @default(false) @map("accepted_terms")
+  acceptedTermsAt      DateTime? @map("accepted_terms_at")
+  acceptedTermsVersion String?   @map("accepted_terms_version")
+  createdAt            DateTime  @default(now()) @map("created_at")
+  updatedAt            DateTime  @updatedAt @map("updated_at")
   accounts             Account[]
   sessions             Session[]
-  createdAt            DateTime @default(now()) @map("created_at")
-  updatedAt            DateTime @updatedAt @map("updated_at")
 
   @@map("users")
 }
 
-// Stores an external login (e.g., Vipps, Google)
 model Account {
   id                String  @id @default(cuid())
-  userId            String  @map("user_id")          // userId links this account to a User
+  userId            String  @map("user_id")
   type              String
   provider          String
   providerAccountId String  @map("provider_account_id")
-
-  // IMPORTANT: Field names must match what the Auth.js Prisma adapter sends.
-  // It uses snake_case keys like access_token, refresh_token, etc.
   refresh_token     String?
   access_token      String?
   expires_at        Int?
@@ -65,24 +49,18 @@ model Account {
   scope             String?
   id_token          String?
   session_state     String?
+  user              User    @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  // If a user is deleted, their accounts are deleted too
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  // Can’t have the same provider ID twice
   @@unique([provider, providerAccountId])
   @@map("accounts")
 }
 
-// Stores who is logged in and until when (expires).
 model Session {
-  id            String   @id @default(cuid())
-  sessionToken  String   @unique @map("session_token")
-  userId        String   @map("user_id")
-  expires       DateTime
-
-  // If the user is deleted, their sessions go away as well.
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id           String   @id @default(cuid())
+  sessionToken String   @unique @map("session_token")
+  userId       String   @map("user_id")
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@map("sessions")
 }
@@ -97,16 +75,46 @@ model VerificationToken {
 }
 
 model Machine {
-  id                 String   @id
-  name               String?
-  oemName            String?  @map("oem_name")
-  firstSeen          DateTime @default(now()) @map("first_seen")
-  lastUpdated        DateTime  @default(now()) @updatedAt @map("last_updated")
-  lastPosReportedAt  DateTime? @map("last_pos_reported_at")
-  lastPosLatitude    Float?    @map("last_pos_latitude")
-  lastPosLongitude   Float?    @map("last_pos_longitude")
+  id                String    @id
+  name              String?
+  oemName           String?   @map("oem_name")
+  firstSeen         DateTime  @default(now()) @map("first_seen")
+  lastUpdated       DateTime  @default(now()) @updatedAt @map("last_updated")
+  lastPosReportedAt DateTime? @map("last_pos_reported_at")
+  lastPosLatitude   Float?    @map("last_pos_latitude")
+  lastPosLongitude  Float?    @map("last_pos_longitude")
 
   @@index([lastUpdated(sort: Desc)], map: "idx_machines_last_updated")
   @@index([lastPosReportedAt(sort: Desc)], map: "idx_machines_last_pos_reported_at")
   @@map("machines")
+}
+
+model Customer {
+  customer_id        Int     @id
+  name               String?
+  email              String?
+  address            String?
+  postal_code        String?
+  city               String?
+  contact            String?
+  telephone_number   String?
+  phone_normalized   String?
+  organization_number String?
+  customer_number    Int?
+  contactPersons     CustomerContactPerson[]
+
+  @@map("customers")
+}
+
+model CustomerContactPerson {
+  customer_id       Int
+  contact_person_id Int
+  name              String?
+  telephone_number  String?
+  email             String?
+  phone_normalized  String?
+  customer          Customer @relation(fields: [customer_id], references: [customer_id], onDelete: Cascade)
+
+  @@id([customer_id, contact_person_id])
+  @@map("customer_contact_persons")
 }

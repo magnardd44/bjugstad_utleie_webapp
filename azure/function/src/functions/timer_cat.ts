@@ -6,7 +6,7 @@ import { fetchAllCatMachines } from "../services/cat";
 app.timer("timer_cat", {
     // run every 15 minutes at second 0 to de-sync from Hydrema’s second 0
     schedule: "0 */15 * * * *",
-    runOnStartup: true,
+    runOnStartup: false,
     handler: async (_: Timer, ctx: InvocationContext): Promise<void> => {
         const stamp = new Date().toISOString();
         ctx.log(`timer_cat fired at ${stamp}`);

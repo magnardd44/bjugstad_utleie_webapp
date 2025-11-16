@@ -51,3 +51,12 @@ export async function requireConfig(name: string): Promise<string> {
     if (!v) throw new Error(`Required config "${name}" is empty.`);
     return v;
 }
+
+export async function optionalConfig(name: string): Promise<string | null> {
+    try {
+        const value = await getConfig(name);
+        return value ? value : null;
+    } catch {
+        return null;
+    }
+}
