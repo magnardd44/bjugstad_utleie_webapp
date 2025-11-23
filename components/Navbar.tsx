@@ -4,6 +4,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useSession } from "next-auth/react";
 import { signOut } from "next-auth/react";
 import {
   Bars3Icon,
@@ -13,7 +14,8 @@ import {
   DocumentTextIcon,
   MapIcon,
   UserIcon,
-  ArrowLeftEndOnRectangleIcon, // logout icon
+  UsersIcon,
+  ArrowLeftEndOnRectangleIcon,
 } from "@heroicons/react/24/outline";
 import { IS_DEV } from "@/lib/constants";
 
@@ -27,7 +29,10 @@ export default function ResponsiveNav() {
   const pathname = usePathname();
   const [isOpen, setIsOpen] = useState(false);
 
-  const items: NavItem[] = [
+  const { data } = useSession();
+  const isAdmin = data?.user?.role === "super_admin";
+
+  const mainItems: NavItem[] = [
     { href: "/avtaler", label: "Aktive avtaler", icon: <ListBulletIcon className="h-5 w-5" /> },
     { href: "/historikk", label: "Avtalehistorikk", icon: <Squares2X2Icon className="h-5 w-5" /> },
     { href: "/dokumenter", label: "Dokumenter", icon: <DocumentTextIcon className="h-5 w-5" /> },
@@ -35,8 +40,13 @@ export default function ResponsiveNav() {
     { href: "/profil", label: "Min profil", icon: <UserIcon className="h-5 w-5" /> },
   ];
 
-  const renderLinks = () =>
-    items.map(({ href, label, icon }) => {
+  // Only shown for admins
+  const adminItems: NavItem[] = [
+    { href: "/brukere", label: "Brukere", icon: <UsersIcon className="h-5 w-5" /> },
+  ];
+
+  const renderLinks = (list: NavItem[]) =>
+    list.map(({ href, label, icon }) => {
       const active = pathname === href;
       return (
         <Link
@@ -54,6 +64,16 @@ export default function ResponsiveNav() {
         </Link>
       );
     });
+
+  const AdminDivider = () => (
+    <div className="mt-4 mb-2 px-3">
+      <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-white/60">
+        <span className="flex-1 h-px bg-white/10" />
+        <span>Admin</span>
+        <span className="flex-1 h-px bg-white/10" />
+      </div>
+    </div>
+  );
 
   return (
     <>
@@ -74,17 +94,25 @@ export default function ResponsiveNav() {
         <div className="flex h-16 items-center border-b border-white/10 px-6 text-lg font-semibold text-white">
           Bjugstad kundeportal
         </div>
-        <nav className="mt-4 flex flex-col gap-1 px-4 flex-1">{renderLinks()}</nav>
+
+        <nav className="mt-4 flex flex-col gap-1 px-4 flex-1">
+          {renderLinks(mainItems)}
+
+          {isAdmin && (
+            <>
+              <AdminDivider />
+              {renderLinks(adminItems)}
+            </>
+          )}
+        </nav>
 
         <div className="p-4 border-t border-white/10 flex flex-col gap-3">
-          {/* DEV badge (only in dev mode) */}
           {IS_DEV && (
             <div className="rounded bg-yellow-500 text-black text-xs font-bold px-2 py-1 text-center">
               DEV MODE
             </div>
           )}
 
-          {/* Logout button */}
           <button
             onClick={() => signOut({ callbackUrl: "/login" })}
             className="flex items-center gap-3 w-full rounded px-3 py-2 text-sm font-medium text-slate-200 hover:bg-white/10 hover:text-white cursor-pointer"
@@ -107,9 +135,18 @@ export default function ResponsiveNav() {
             <XMarkIcon className="h-6 w-6 text-white" />
           </button>
         </div>
-        <nav className="mt-2 flex flex-col gap-1 px-4">{renderLinks()}</nav>
 
-        {/* Mobile logout button */}
+        <nav className="mt-2 flex flex-col gap-1 px-4">
+          {renderLinks(mainItems)}
+
+          {isAdmin && (
+            <>
+              <AdminDivider />
+              {renderLinks(adminItems)}
+            </>
+          )}
+        </nav>
+
         <div className="p-4 border-t border-white/10 flex flex-col gap-3">
           {IS_DEV && (
             <div className="rounded bg-yellow-500 text-black text-xs font-bold px-2 py-1 text-center">
