@@ -41,7 +41,7 @@ export default function LoginPage() {
       case "AccessDenied":
         return "Tilgang nektet under innlogging. Prøv igjen eller kontakt support.";
       case "Configuration":
-        return "Det er en feil i serveroppsettet for innlogging.";
+        return "Det har oppstått en feil i servertilkoblingen. Prøv å logge inn igjen eller kontakt support.";
       case "OAuthCallback":
       case "OAuthCallbackError":
         return "Noe gikk galt i Vipps-innloggingen. Prøv igjen.";

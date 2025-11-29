@@ -77,6 +77,7 @@ export const authConfig: NextAuthConfig = {
   pages: {
     signIn: "/login",
     newUser: "/onboarding", // redirect new users to onboarding
+    error: "/login", // error code passed in query string as ?error=
   },
 
   callbacks: {
@@ -125,7 +126,6 @@ export const authConfig: NextAuthConfig = {
       try {
         const provider = account?.provider; // "vipps"
         const providerAccountId = account?.providerAccountId; // maps to profile.sub
-        // NOTE: in your logs: providerAccountId === "228fcb4f-0c7d-40f6-b00b-89b6612ed5f0"
 
         // Canonical fields from Vipps (based on your logs):
         // - profile.email
@@ -204,7 +204,6 @@ export const authConfig: NextAuthConfig = {
           if (Object.keys(updates).length > 0 && user?.id) {
             await prisma.user.update({ where: { id: user.id }, data: updates });
           }
-
 
           // Is that DB user already linked to this same Vipps account?
           // We check by userId + provider + providerAccountId.

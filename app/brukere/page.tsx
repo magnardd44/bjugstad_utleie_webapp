@@ -1,11 +1,196 @@
-import React from 'react';
+import { auth } from "@/lib/auth";
+import { prisma } from "@/lib/prisma";
+import { redirect } from "next/navigation";
+import { PlusIcon } from "@heroicons/react/24/outline";
 
-const test = () => {
+export const revalidate = 0;
+
+export default async function BrukerePage() {
+  const session = await auth();
+
+  if (!session) {
+    redirect("/login");
+  }
+
+  const isAdmin = session.user?.role === "super_admin";
+
+  if (!isAdmin) {
     return (
-        <div className='h-screen flex justify-center items-center'>
-            <h1 className='text-3xl'>BRUKERE FOR ADMINS</h1>
-        </div>
+      <main className="p-8">
+        <section className="rounded-2xl border border-slate-200 bg-white p-10 text-center shadow-sm">
+          <h1 className="text-2xl font-semibold text-slate-900">Begrenset tilgang</h1>
+          <p className="mt-3 text-slate-600">
+            Du trenger administratorrettigheter for å se brukerlisten.
+          </p>
+        </section>
+      </main>
     );
+  }
+
+  const users = await prisma.user.findMany({
+    orderBy: { createdAt: "desc" },
+    select: {
+      id: true,
+      name: true,
+      role: true,
+      phone: true,
+      email: true,
+      address_street: true,
+      address_postal_code: true,
+      address_region: true,
+      company: true,
+      createdAt: true,
+      updatedAt: true,
+      acceptedTerms: true,
+      acceptedTermsAt: true,
+    },
+  });
+  console.log("Rendering user page with users:");
+  console.log("Fetched users:", users);
+
+  return (
+    <main className="p-8 space-y-6">
+      <header className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+        <div>
+          <h1 className="text-3xl font-semibold text-slate-900">Brukeroversikt</h1>
+          <p className="mt-2 text-slate-600">
+            Oversikt over alle brukere i portalen. Inkluderer ikke registrerte kontaktpersoner hos kunder som ikke har logget inn.
+          </p>
+        </div>
+        <button
+          type="button"
+          className="inline-flex items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow hover:bg-blue-500 cursor-pointer"
+        >
+          <PlusIcon className="h-5 w-5" />
+          Legg til bruker
+        </button>
+      </header>
+
+      <section className="rounded-2xl border border-slate-200 bg-white shadow-sm">
+        <div className="overflow-x-auto overflow-y-hidden rounded-t-2xl">
+          <table className="min-w-full divide-y divide-slate-100">
+            <thead className="bg-slate-50 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">
+              <tr>
+                <th className="px-4 py-3 rounded-tl-2xl">Navn</th>
+                <th className="px-4 py-3">Rolle</th>
+                <th className="px-4 py-3">Telefon</th>
+                <th className="px-4 py-3">E-post</th>
+                <th className="px-4 py-3">Adresse</th>
+                <th className="px-4 py-3">Selskap</th>
+                <th className="px-4 py-3">Opprettet</th>
+                <th className="px-4 py-3">Oppdatert</th>
+                <th className="px-4 py-3">Vilkår</th>
+                <th className="px-4 py-3 rounded-tr-2xl">Akseptert</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100 text-sm">
+              {users.map((user) => {
+                const created = formatDate(user.createdAt);
+                const updated = formatDate(user.updatedAt);
+                const acceptedAt = formatDate(user.acceptedTermsAt);
+
+                return (
+                  <tr key={user.id} className="hover:bg-slate-50">
+                    <td className="px-4 py-3">
+                      <div className="font-medium text-slate-900">{user.name ?? "—"}</div>
+                      <div className="text-xs text-slate-500">{user.id}</div>
+                    </td>
+                    <td className="px-4 py-3 text-slate-700">{formatRole(user.role)}</td>
+                    <td className="px-4 py-3 text-slate-700">{formatPhone(user.phone)}</td>
+                    <td className="px-4 py-3 text-slate-700">
+                      {user.email ?? <span className="text-slate-400">—</span>}
+                    </td>
+                    <td className="px-4 py-3 text-slate-700">
+                      {formatAddress({
+                        street: user.address_street,
+                        postalCode: user.address_postal_code,
+                        region: user.address_region,
+                      })}
+                    </td>
+                    <td className="px-4 py-3 text-slate-700">{user.company ?? "—"}</td>
+                    <td className="px-4 py-3 tabular-nums text-slate-700">{created ?? "—"}</td>
+                    <td className="px-4 py-3 tabular-nums text-slate-700">{updated ?? "—"}</td>
+                    <td className="px-4 py-3">
+                      <span
+                        className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold ${user.acceptedTerms
+                          ? "bg-green-100 text-green-800"
+                          : "bg-amber-100 text-amber-800"
+                          }`}
+                      >
+                        {user.acceptedTerms ? "Ja" : "Nei"}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 tabular-nums text-slate-700">
+                      {acceptedAt ?? <span className="text-slate-400">—</span>}
+                    </td>
+                  </tr>
+                );
+              })}
+              {users.length === 0 && (
+                <tr>
+                  <td colSpan={10} className="px-4 py-10 text-center text-slate-500">
+                    Ingen brukere funnet.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </main>
+  );
 }
 
-export default test;
+function formatPhone(raw?: string | null) {
+  if (!raw) return "N/A";
+  const compact = raw.replace(/\s+/g, "");
+  if (!compact.startsWith("+") || compact.length <= 3) {
+    return raw;
+  }
+  const country = compact.slice(0, 3);
+  const rest = compact.slice(3);
+  const groups = rest.match(/.{1,2}/g);
+  const spaced = groups ? groups.join(" ") : rest;
+  return `${country} ${spaced}`.trim();
+}
+
+function formatAddress({
+  street,
+  postalCode,
+  region,
+}: {
+  street?: string | null;
+  postalCode?: string | null;
+  region?: string | null;
+}) {
+  const parts: string[] = [];
+  if (street) parts.push(street);
+  const postalRegion = [postalCode, region].filter(Boolean).join(" ");
+  if (postalRegion) parts.push(postalRegion);
+  return parts.length ? parts.join(", ") : "N/A";
+}
+
+function formatDate(value?: Date | string | null) {
+  if (!value) return undefined;
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return undefined;
+  return date.toLocaleString("no-NO", {
+    year: "numeric",
+    month: "short",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+function formatRole(role?: string | null) {
+  if (!role) return "—";
+  const labels: Record<string, string> = {
+    super_admin: "Administrator",
+    customer: "Kunde",
+  };
+  return labels[role] ?? role
+    .split("_")
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
+}
