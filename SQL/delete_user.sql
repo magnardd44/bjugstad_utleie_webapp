@@ -1,2 +1,2 @@
 DELETE FROM users
-WHERE phone = '+4745938863';
+WHERE id IS NOT NULL;

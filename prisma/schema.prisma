@@ -19,24 +19,30 @@ enum GlobalRole {
   customer
 }
 
+enum CompanyRole {
+  admin
+  user
+}
+
 model User {
-  id                   String    @id @default(cuid())
-  phone                String?   @unique
+  id                   String       @id @default(cuid())
+  phone                String?      @unique
   name                 String?
-  email                String?   @unique
-  emailVerified        DateTime? @map("email_verified")
+  email                String?      @unique
+  emailVerified        DateTime?    @map("email_verified")
   address_street       String?
   address_postal_code  String?
   address_region       String?
-  company              String?
-  role                 GlobalRole @default(customer)
-  acceptedTerms        Boolean   @default(false) @map("accepted_terms")
-  acceptedTermsAt      DateTime? @map("accepted_terms_at")
-  acceptedTermsVersion String?   @map("accepted_terms_version")
-  createdAt            DateTime  @default(now()) @map("created_at")
-  updatedAt            DateTime  @updatedAt @map("updated_at")
+  role                 GlobalRole   @default(customer)
+  acceptedTerms        Boolean      @default(false) @map("accepted_terms")
+  acceptedTermsAt      DateTime?    @map("accepted_terms_at")
+  acceptedTermsVersion String?      @map("accepted_terms_version")
+  createdAt            DateTime     @default(now()) @map("created_at")
+  updatedAt            DateTime     @updatedAt @map("updated_at")
+
   accounts             Account[]
   sessions             Session[]
+  accesses             UserCustomerAccess[]
 
   @@map("users")
 }
@@ -95,18 +101,19 @@ model Machine {
 }
 
 model Customer {
-  customer_id        Int     @id
-  name               String?
-  email              String?
-  address            String?
-  postal_code        String?
-  city               String?
-  contact            String?
-  telephone_number   String?
-  phone_normalized   String?
+  customer_id         Int                    @id
+  name                String?
+  email               String?
+  address             String?
+  postal_code         String?
+  city                String?
+  contact             String?
+  telephone_number    String?
+  phone_normalized    String?
   organization_number String?
-  customer_number    Int?
-  contactPersons     CustomerContactPerson[]
+  customer_number     Int?
+  contactPersons      CustomerContactPerson[]
+  accesses            UserCustomerAccess[]
 
   @@map("customers")
 }
@@ -122,4 +129,16 @@ model CustomerContactPerson {
 
   @@id([customer_id, contact_person_id])
   @@map("customer_contact_persons")
+}
+
+model UserCustomerAccess {
+  userId     String       @map("user_id")
+  customerId Int          @map("customer_id")
+  role       CompanyRole
+
+  user       User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  customer   Customer     @relation(fields: [customerId], references: [customer_id], onDelete: Cascade)
+
+  @@id([userId, customerId])
+  @@map("user_customer_accesses")
 }
