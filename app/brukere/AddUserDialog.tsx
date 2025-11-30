@@ -1,0 +1,376 @@
+'use client';
+
+import { useEffect, useState } from "react";
+import { MinusCircleIcon, PlusIcon, XMarkIcon } from "@heroicons/react/24/outline";
+
+type RoleOption = "customer" | "super_admin";
+type CompanyRole = "selskapsadmin" | "selskapsbruker";
+type PhoneCountry = "NO" | "DK" | "SE" | "FI";
+
+type PhoneMeta = {
+  code: string;
+  flag: string;
+  lengthRange: [number, number];
+  example: string;
+  formatGroups: number[];
+};
+
+const PHONE_RULES: Record<PhoneCountry, PhoneMeta> = {
+  NO: { code: "+47", flag: "🇳🇴", lengthRange: [8, 8], example: "12 34 56 78", formatGroups: [2, 2, 2, 2] },
+  DK: { code: "+45", flag: "🇩🇰", lengthRange: [8, 8], example: "12 34 56 78", formatGroups: [2, 2, 2, 2] },
+  SE: { code: "+46", flag: "🇸🇪", lengthRange: [7, 10], example: "070 123 45 67", formatGroups: [3, 3, 2, 2] },
+  FI: { code: "+358", flag: "🇫🇮", lengthRange: [8, 10], example: "040 123 45 67", formatGroups: [3, 3, 2, 2] },
+};
+
+type Relationship = {
+  id: string;
+  company: string;
+  role: CompanyRole;
+};
+
+// Generate a stable unique ID without relying on a module-level counter
+function createRelationshipId(): string {
+  if (typeof window !== "undefined" && window.crypto && "randomUUID" in window.crypto) {
+    return window.crypto.randomUUID();
+  }
+  // Fallback for older browsers / environments
+  return `relationship-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+}
+
+const defaultRelationship = (): Relationship => ({
+  id: createRelationshipId(),
+  company: "",
+  role: "selskapsbruker",
+});
+
+
+export default function AddUserDialog() {
+  const [open, setOpen] = useState(false);
+  const [role, setRole] = useState<RoleOption>("customer");
+  const [phoneCountry, setPhoneCountry] = useState<PhoneCountry>("NO");
+  const [phoneNumber, setPhoneNumber] = useState("");
+  const [relationships, setRelationships] = useState<Relationship[]>([defaultRelationship()]);
+  const [errors, setErrors] = useState<{ phone?: string }>({});
+  const [submitting, setSubmitting] = useState(false);
+
+  const phoneMeta = PHONE_RULES[phoneCountry];
+
+  useEffect(() => {
+    const meta = PHONE_RULES[phoneCountry];
+    setPhoneNumber((prev) => prev.slice(0, meta.lengthRange[1]));
+    setErrors((prev) => ({ ...prev, phone: undefined }));
+  }, [phoneCountry]);
+
+  function resetForm() {
+    setRole("customer");
+    setPhoneCountry("NO");
+    setPhoneNumber("");
+    setRelationships([defaultRelationship()]);
+    setErrors({});
+    setSubmitting(false);
+  }
+
+  function closeDialog() {
+    setOpen(false);
+    resetForm();
+  }
+
+  function validatePhone(): string | undefined {
+    const digits = phoneNumber;
+    const [min, max] = phoneMeta.lengthRange;
+    if (!digits) {
+      return "Telefonnummer er påkrevd.";
+    }
+    if (digits.length < min || digits.length > max) {
+      return `Landskode ${phoneMeta.code} krever ${min === max ? `${min}` : `${min}-${max}`} sifre (eksempel: ${phoneMeta.example}).`;
+    }
+    return undefined;
+  }
+
+  function handleSubmit(event: React.FormEvent) {
+    event.preventDefault();
+    const phoneError = validatePhone();
+    if (phoneError) {
+      setErrors({ phone: phoneError });
+      return;
+    }
+
+    setErrors({});
+    setSubmitting(true);
+
+    // Placeholder until backend wiring is ready.
+    setTimeout(() => {
+      console.log("TODO: Send data to backend", {
+        role,
+        phone: `${phoneMeta.code}${phoneNumber}`,
+        relationships: role === "customer" ? relationships : [],
+      });
+      setSubmitting(false);
+      setOpen(false);
+      resetForm();
+    }, 600);
+  }
+
+  function addRelationship() {
+    setRelationships((prev) => [...prev, defaultRelationship()]);
+  }
+
+  function updateRelationship(id: string, patch: Partial<Relationship>) {
+    setRelationships((prev) =>
+      prev.map((item) => (item.id === id ? { ...item, ...patch } : item)),
+    );
+  }
+
+  function removeRelationship(id: string) {
+    setRelationships((prev) => (prev.length <= 1 ? prev : prev.filter((item) => item.id !== id)));
+  }
+
+  const showRelationships = role === "customer";
+  const hasMultipleRelationships = relationships.length > 1;
+
+  return (
+    <>
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        className="inline-flex items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow hover:bg-blue-500 cursor-pointer"
+      >
+        <PlusIcon className="h-5 w-5" />
+        Legg til bruker
+      </button>
+
+      {open && (
+        <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-slate-900/40 px-4 py-8">
+          <div className="flex w-full max-w-3xl max-h-[90vh] min-h-0 flex-col overflow-hidden rounded-2xl bg-white shadow-2xl ring-1 ring-slate-900/10">
+            <div className="flex items-start justify-between border-b border-slate-100 px-6 py-4">
+              <div>
+                <h2 className="text-2xl font-semibold text-slate-900">Legg til bruker</h2>
+                <p className="text-sm text-slate-600">
+                  Fyll ut detaljene under. Data lagres først når API-integrasjonen er klar.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={closeDialog}
+                className="rounded-full p-2 text-slate-500 hover:bg-slate-100 hover:text-slate-700"
+                aria-label="Lukk dialog"
+              >
+                <XMarkIcon className="h-5 w-5" />
+              </button>
+            </div>
+
+            <form className="flex flex-1 min-h-0 flex-col" onSubmit={handleSubmit}>
+              <div className="flex-1 min-h-0 space-y-8 overflow-y-auto px-6 py-6">
+                <section className="space-y-4">
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700" htmlFor="role">
+                      Rolle
+                    </label>
+                    <select
+                      id="role"
+                      value={role}
+                      onChange={(event) => setRole(event.target.value as RoleOption)}
+                      className="mt-2 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/40"
+                    >
+                      <option value="customer">Kunde</option>
+                      <option value="super_admin">Admin</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700" htmlFor="phone">
+                      Telefonnummer
+                    </label>
+                    <div className="mt-2 flex gap-2">
+                      <select
+                        aria-label="Landskode"
+                        value={phoneCountry}
+                        onChange={(event) => setPhoneCountry(event.target.value as PhoneCountry)}
+                        className="rounded-xl border border-slate-300 bg-slate-50 px-3 py-2 text-sm font-semibold text-slate-800 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/40"
+                      >
+                        {Object.entries(PHONE_RULES).map(([key, meta]) => (
+                          <option key={key} value={key}>
+                            {`${meta.flag} ${meta.code}`}
+                          </option>
+                        ))}
+                      </select>
+                      <input
+                        id="phone"
+                        type="text"
+                        value={formatPhoneDisplay(phoneMeta, phoneNumber)}
+                        placeholder={phoneMeta.example}
+                        onChange={(event) => {
+                          const digits = event.target.value.replace(/\D/g, "");
+                          const trimmed = digits.slice(0, phoneMeta.lengthRange[1]);
+                          setPhoneNumber(trimmed);
+                        }}
+                        className="flex-1 rounded-xl border border-slate-300 px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/40"
+                      />
+                    </div>
+                    {errors.phone && (
+                      <p className="mt-1 text-sm text-red-600">{errors.phone}</p>
+                    )}
+                  </div>
+                </section>
+
+                {showRelationships && (
+                  <section className="space-y-4 border-t border-slate-200 pt-6">
+                    <div>
+                      <label className="block text-sm font-semibold text-slate-900">
+                        Selskapsrelasjoner
+                      </label>
+                      <p className="mt-1 text-xs text-slate-500">
+                        Legg inn hvilke selskap brukeren skal knyttes til.
+                      </p>
+                    </div>
+
+                    <div className="mt-2">
+                      {/* Header row */}
+                      <div
+                        className={`hidden gap-3 text-sm font-medium text-slate-700 md:grid ${hasMultipleRelationships
+                          ? "md:grid-cols-[2fr_1fr_max-content]"
+                          : "md:grid-cols-[2fr_1fr]"
+                          }`}
+                      >
+                        <span>Firmanavn</span>
+                        <span>Rolle i selskap</span>
+                        {hasMultipleRelationships && (
+                          // Zero-height ghost button so third column width matches Fjern,
+                          // but without adding vertical space.
+                          <div aria-hidden="true" className="h-0 overflow-hidden">
+                            <button
+                              type="button"
+                              className="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-sm font-medium"
+                            >
+                              <MinusCircleIcon className="h-5 w-5" />
+                              Fjern
+                            </button>
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="mt-2">
+                        {relationships.map((rel, index) => (
+                          <div
+                            key={rel.id}
+                            className={`grid gap-3 md:items-center ${hasMultipleRelationships
+                              ? "md:grid-cols-[2fr_1fr_max-content]"
+                              : "md:grid-cols-[2fr_1fr]"
+                              } ${index === 0 ? "" : "mt-4"}`}
+                          >
+                            <div>
+                              <label
+                                className="block text-sm font-medium text-slate-700 md:sr-only"
+                                htmlFor={`company-${rel.id}`}
+                              >
+                                Firmanavn
+                              </label>
+                              <input
+                                id={`company-${rel.id}`}
+                                type="text"
+                                value={rel.company}
+                                placeholder="Firmanavn"
+                                onChange={(event) =>
+                                  updateRelationship(rel.id, { company: event.target.value })
+                                }
+                                className="mt-2 w-full h-10 rounded-lg border border-slate-300 bg-white px-3 text-sm shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/40 md:mt-0"
+                              />
+                            </div>
+
+                            <div>
+                              <label
+                                className="block text-sm font-medium text-slate-700 md:sr-only"
+                                htmlFor={`company-role-${rel.id}`}
+                              >
+                                Rolle i selskap
+                              </label>
+                              <select
+                                id={`company-role-${rel.id}`}
+                                value={rel.role}
+                                onChange={(event) =>
+                                  updateRelationship(rel.id, {
+                                    role: event.target.value as CompanyRole,
+                                  })
+                                }
+                                className="mt-2 w-full h-10 rounded-lg border border-slate-300 bg-white px-3 text-sm shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/40 md:mt-0"
+                              >
+                                <option value="selskapsadmin">Admin</option>
+                                <option value="selskapsbruker">Bruker</option>
+                              </select>
+                            </div>
+
+                            {hasMultipleRelationships && (
+                              <div className="flex items-center justify-end">
+                                <button
+                                  type="button"
+                                  onClick={() => removeRelationship(rel.id)}
+                                  className="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-sm font-medium text-slate-500 hover:text-red-600"
+                                >
+                                  <MinusCircleIcon className="h-5 w-5" />
+                                  Fjern
+                                </button>
+                              </div>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={addRelationship}
+                      className="inline-flex items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow hover:bg-blue-500 cursor-pointer"
+                    >
+                      <PlusIcon className="h-4 w-4" />
+                      Legg til selskapsrelasjon
+                    </button>
+                  </section>
+                )}
+              </div>
+
+              <div className="border-t border-slate-100 px-6 py-4 text-sm text-slate-500">
+                <p>
+                  Backend-tilkoblingen er ikke aktiv ennå. Skjemaet validerer formater og gir deg
+                  forhåndsvisning.
+                </p>
+                <div className="mt-3 flex flex-wrap gap-3">
+                  <button
+                    type="button"
+                    onClick={closeDialog}
+                    className="inline-flex items-center justify-center rounded-xl border border-slate-300 px-4 py-2 font-semibold text-slate-700 hover:bg-slate-50"
+                  >
+                    Avbryt
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={submitting}
+                    className="inline-flex items-center justify-center rounded-xl bg-blue-600 px-4 py-2 font-semibold text-white shadow hover:bg-blue-500 disabled:cursor-not-allowed disabled:bg-blue-400"
+                  >
+                    {submitting ? "Lagrer…" : "Lagre"}
+                  </button>
+                </div>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
+function formatPhoneDisplay(meta: PhoneMeta, digits: string) {
+  if (!digits) return "";
+  const groups = meta.formatGroups;
+  const sections: string[] = [];
+  let index = 0;
+  for (const size of groups) {
+    if (index >= digits.length) break;
+    const next = digits.slice(index, index + size);
+    sections.push(next);
+    index += size;
+  }
+  if (index < digits.length) {
+    sections.push(digits.slice(index));
+  }
+  return sections.join(" ").trim();
+}

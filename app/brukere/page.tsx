@@ -1,7 +1,7 @@
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { redirect } from "next/navigation";
-import { PlusIcon } from "@heroicons/react/24/outline";
+import AddUserDialog from "./AddUserDialog";
 
 export const revalidate = 0;
 
@@ -57,13 +57,7 @@ export default async function BrukerePage() {
             Oversikt over alle brukere i portalen. Inkluderer ikke registrerte kontaktpersoner hos kunder som ikke har logget inn.
           </p>
         </div>
-        <button
-          type="button"
-          className="inline-flex items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow hover:bg-blue-500 cursor-pointer"
-        >
-          <PlusIcon className="h-5 w-5" />
-          Legg til bruker
-        </button>
+        <AddUserDialog />
       </header>
 
       <section className="rounded-2xl border border-slate-200 bg-white shadow-sm">
